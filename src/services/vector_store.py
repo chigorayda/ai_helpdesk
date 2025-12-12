@@ -6,9 +6,9 @@ import logging
 from typing import List, Dict, Any, Optional, Tuple
 import chromadb
 from chromadb.config import Settings as ChromaSettings
-from langchain.vectorstores import Chroma
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.schema import Document
+from langchain_community.vectorstores import Chroma
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_core.documents import Document
 from src.models.schemas import KnowledgeDocument, RetrievalResult
 from src.services.llm_service import llm_service
 from config.settings import settings
@@ -21,7 +21,12 @@ class VectorStoreService:
     
     def __init__(self):
         """Initialize the vector store service."""
-        self.embeddings = llm_service.embeddings
+        # Get embeddings based on configured provider
+        from src.models.schemas import LLMProvider
+        if settings.system_config.llm.provider == LLMProvider.OPENAI:
+            self.embeddings = llm_service.openai_embeddings
+        else:
+            self.embeddings = llm_service.gemini_embeddings
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=settings.system_config.vector_store.chunk_size,
             chunk_overlap=settings.system_config.vector_store.chunk_overlap,

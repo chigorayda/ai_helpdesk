@@ -11,6 +11,8 @@ sentence-transformers==2.2.2
 
 # Google Gemini API
 google-generativeai 
+langchain-openai
+openai
 
 # api 
 fastapi 

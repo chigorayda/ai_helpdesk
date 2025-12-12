@@ -115,13 +115,20 @@ class VectorStoreConfig(BaseModel):
     persist_directory: str = "./data/vector_store"
 
 
+class LLMProvider(str, Enum):
+    """Available LLM providers."""
+    GEMINI = "gemini"
+    OPENAI = "openai"
+
+
 class LLMConfig(BaseModel):
     """Configuration for LLM service."""
+    provider: LLMProvider = LLMProvider.GEMINI
     model_name: str = "gemini-1.5-flash"
+    openai_model_name: str = "gpt-3.5-turbo"
     temperature: float = 0.1
     max_tokens: int = 2000
     timeout: int = 30
-
 
 class SystemConfig(BaseModel):
     """Overall system configuration."""
@@ -130,3 +137,22 @@ class SystemConfig(BaseModel):
     knowledge_base_path: str = "./data/knowledge_base"
     escalation_threshold: float = 0.7
     min_confidence_threshold: float = 0.5
+
+class ComparisonMetrics(BaseModel):
+    """Metrics for comparing LLM providers."""
+    provider: LLMProvider
+    processing_time: float
+    estimated_cost: float
+    hallucination_score: float = 0.0
+    response_quality: float = 0.0
+
+
+class ComparisonResponse(BaseModel):
+    """Response comparing different LLM providers."""
+    request_id: str
+    original_request: str
+    gemini_metrics: ComparisonMetrics
+    openai_metrics: ComparisonMetrics
+    gemini_response: HelpDeskResponse
+    openai_response: HelpDeskResponse
+    winner: LLMProvider

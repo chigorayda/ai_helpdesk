@@ -15,6 +15,8 @@ from src.workflows.helpdesk_workflow import helpdesk_workflow
 from src.services.document_processor import document_processor
 from src.services.vector_store import vector_store_service
 
+from src.services.cost_service import cost_service
+from src.models.schemas import ComparisonResponse, ComparisonMetrics, LLMProvider
 
 # Configure logging
 logging.basicConfig(
@@ -180,13 +182,14 @@ class HelpDeskSystem:
             logger.error(f"Error processing request: {str(e)}")
             raise
     
-    def process_request_sync(self, request_text: str, user_id: str = None) -> HelpDeskResponse:
+    def process_request_sync(self, request_text: str, user_id: str = None, provider: Optional[LLMProvider] = None) -> HelpDeskResponse:
         """
         Synchronous version of process_request.
         
         Args:
             request_text: The user's request text
             user_id: Optional user identifier
+            provider: Optional LLM provider to use (Gemini or OpenAI)
             
         Returns:
             HelpDeskResponse with the result
@@ -195,6 +198,12 @@ class HelpDeskSystem:
             raise RuntimeError("Help desk system not initialized. Call initialize_sync() first.")
         
         try:
+            # Set provider if specified
+            original_provider = settings.system_config.llm.provider
+            if provider:
+                settings.system_config.llm.provider = provider
+                logger.info(f"Using {provider.value} provider for this request")
+            
             # Create request object
             request = HelpDeskRequest(
                 id=str(uuid.uuid4()),
@@ -207,6 +216,10 @@ class HelpDeskSystem:
             
             # Process through workflow
             response = self.workflow.process_request_sync(request)
+            
+            # Restore original provider
+            if provider:
+                settings.system_config.llm.provider = original_provider
             
             logger.info(f"Request {request.id} processed in {response.processing_time:.2f}s")
             logger.info(f"Category: {response.category.value}, Confidence: {response.confidence:.2f}")
@@ -223,7 +236,7 @@ class HelpDeskSystem:
         Process multiple requests in batch.
         
         Args:
-            requests: List of request dictionaries with 'request' and optional 'user_id' keys
+            requests: List of request dictionaries with 'request' and optional 'user_id' and 'provider' keys
             
         Returns:
             List of HelpDeskResponse objects
@@ -237,9 +250,13 @@ class HelpDeskSystem:
             try:
                 logger.info(f"Processing batch request {i+1}/{len(requests)}")
                 
+                # Get provider if specified
+                provider = req_data.get('provider')
+                
                 response = self.process_request_sync(
                     request_text=req_data['request'],
-                    user_id=req_data.get('user_id')
+                    user_id=req_data.get('user_id'),
+                    provider=provider
                 )
                 responses.append(response)
                 
@@ -266,6 +283,78 @@ class HelpDeskSystem:
         
         return responses
     
+    async def compare_providers(self, request_text: str, user_id: str = None) -> ComparisonResponse:
+        """
+        Compare Gemini and OpenAI processing for the same request.
+        
+        Args:
+            request_text: The user's request text
+            user_id: Optional user identifier
+            
+        Returns:
+            ComparisonResponse with metrics and responses from both providers
+        """
+        if not self.is_initialized:
+            raise RuntimeError("Help desk system not initialized. Call initialize() first.")
+
+        request_id = str(uuid.uuid4())
+        input_tokens = cost_service.estimate_tokens(request_text)
+        
+        # Process with Gemini
+        logger.info(f"Processing comparison request with Gemini...")
+        settings.system_config.llm.provider = LLMProvider.GEMINI
+        gemini_start = datetime.now()
+        gemini_response = await self.process_request(request_text, user_id)
+        gemini_duration = (datetime.now() - gemini_start).total_seconds()
+        
+        gemini_output_tokens = cost_service.estimate_tokens(gemini_response.response)
+        gemini_cost = cost_service.calculate_cost(LLMProvider.GEMINI, input_tokens, gemini_output_tokens)
+        
+        gemini_metrics = ComparisonMetrics(
+            provider=LLMProvider.GEMINI,
+            processing_time=gemini_duration,
+            estimated_cost=gemini_cost,
+            hallucination_score=0.1 if gemini_response.confidence < 0.7 else 0.0, # Placeholder logic
+            response_quality=gemini_response.confidence
+        )
+        
+        # Process with OpenAI
+        logger.info(f"Processing comparison request with OpenAI...")
+        settings.system_config.llm.provider = LLMProvider.OPENAI
+        openai_start = datetime.now()
+        openai_response = await self.process_request(request_text, user_id)
+        openai_duration = (datetime.now() - openai_start).total_seconds()
+        
+        openai_output_tokens = cost_service.estimate_tokens(openai_response.response)
+        openai_cost = cost_service.calculate_cost(LLMProvider.OPENAI, input_tokens, openai_output_tokens)
+        
+        openai_metrics = ComparisonMetrics(
+            provider=LLMProvider.OPENAI,
+            processing_time=openai_duration,
+            estimated_cost=openai_cost,
+            hallucination_score=0.1 if openai_response.confidence < 0.7 else 0.0, # Placeholder logic
+            response_quality=openai_response.confidence
+        )
+        
+        # Determine winner based on a simple heuristic (quality/cost ratio? simply confidence?)
+        # Here we just prefer higher confidence, tie-break with lower cost
+        if gemini_response.confidence > openai_response.confidence:
+            winner = LLMProvider.GEMINI
+        elif openai_response.confidence > gemini_response.confidence:
+            winner = LLMProvider.OPENAI
+        else:
+            winner = LLMProvider.GEMINI if gemini_cost < openai_cost else LLMProvider.OPENAI
+
+        return ComparisonResponse(
+            request_id=request_id,
+            original_request=request_text,
+            gemini_metrics=gemini_metrics,
+            openai_metrics=openai_metrics,
+            gemini_response=gemini_response,
+            openai_response=openai_response,
+            winner=winner
+        )
+
     def refresh_knowledge_base(self) -> bool:
         """
         Refresh the knowledge base with updated documents.

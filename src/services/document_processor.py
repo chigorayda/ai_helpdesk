@@ -8,13 +8,13 @@ from typing import List, Dict, Any, Optional, Union
 from datetime import datetime
 from pathlib import Path
 import markdown
-from langchain.document_loaders import (
+from langchain_community.document_loaders import (
     TextLoader, 
     JSONLoader,
     PyPDFLoader,
     DirectoryLoader
 )
-from langchain.schema import Document
+from langchain_core.documents import Document
 from src.models.schemas import KnowledgeDocument, RequestCategory
 from config.settings import settings
 

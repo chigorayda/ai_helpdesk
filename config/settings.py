@@ -20,6 +20,7 @@ class Settings:
     def _load_env_variables(self):
         """Load environment variables."""
         self.google_api_key: str = os.getenv("GOOGLE_API_KEY", "")
+        self.openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
         self.environment: str = os.getenv("ENVIRONMENT", "development")
         self.log_level: str = os.getenv("LOG_LEVEL", "INFO")
         self.debug: bool = os.getenv("DEBUG", "false").lower() == "true"
@@ -32,6 +33,9 @@ class Settings:
         # LLM settings
         self.system_config.llm.model_name = os.getenv(
             "GEMINI_MODEL", "gemini-1.5-flash"
+        )
+        self.system_config.llm.openai_model_name = os.getenv(
+            "OPENAI_MODEL", "gpt-3.5-turbo"
         )
         self.system_config.llm.temperature = float(os.getenv("LLM_TEMPERATURE", "0.1"))
         self.system_config.llm.max_tokens = int(os.getenv("MAX_TOKENS", "2000"))

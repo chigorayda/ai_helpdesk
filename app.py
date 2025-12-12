@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from config.settings import settings
+from src.models.schemas import ComparisonResponse
 from src.models.schemas import HelpDeskRequest, HelpDeskResponse
 from src.workflows.helpdesk_workflow import helpdesk_workflow
 from src.services.document_processor import document_processor
@@ -41,6 +42,7 @@ class HelpDeskRequestAPI(BaseModel):
     """API model for help desk requests."""
     request: str = Field(..., description="The user's help desk request text", min_length=1)
     user_id: Optional[str] = Field(None, description="Optional user identifier")
+    model: Optional[str] = Field("gemini", description="LLM provider to use: 'gemini' or 'openai'", pattern="^(gemini|openai)$")
 
 
 class BatchRequestAPI(BaseModel):
@@ -153,15 +155,22 @@ def process_request(
     Process a single help desk request.
     
     Args:
-        request: The help desk request containing the user's question and optional user ID
+        request: The help desk request containing the user's question, optional user ID, and model selection
         
     Returns:
         HelpDeskResponse with the AI-generated response and metadata
     """
     try:
+        # Import LLMProvider enum
+        from src.models.schemas import LLMProvider
+        
+        # Map model string to LLMProvider enum
+        provider = LLMProvider.OPENAI if request.model and request.model.lower() == "openai" else LLMProvider.GEMINI
+        
         response =  system.process_request_sync(
             request_text=request.request,
-            user_id=request.user_id
+            user_id=request.user_id,
+            provider=provider
         )
         print(f"Category: {response.category.value}")
         print(f"Confidence: {response.confidence:.2f}")
@@ -173,6 +182,25 @@ def process_request(
     except Exception as e:
         logger.error(f"Error processing request: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error processing request: {str(e)}")
+
+
+@app.post("/process/compare", response_model=ComparisonResponse, tags=["Help Desk"])
+async def compare_providers(
+    request: HelpDeskRequestAPI,
+    system: HelpDeskSystem = Depends(get_system)
+):
+    """
+    Compare Gemini and OpenAI processing for the same request.
+    """
+    try:
+        response = await system.compare_providers(
+            request_text=request.request,
+            user_id=request.user_id
+        )
+        return response
+    except Exception as e:
+        logger.error(f"Error comparing providers: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error comparing providers: {str(e)}")
 
 
 @app.post("/process/batch", response_model=List[HelpDeskResponse], tags=["Help Desk"])
@@ -192,11 +220,15 @@ def process_batch_requests(
         List of HelpDeskResponse objects
     """
     try:
+        # Import LLMProvider enum
+        from src.models.schemas import LLMProvider
+        
         # Convert API models to dictionaries
         requests_data = [
             {
                 "request": req.request,
-                "user_id": req.user_id
+                "user_id": req.user_id,
+                "provider": LLMProvider.OPENAI if req.model and req.model.lower() == "openai" else LLMProvider.GEMINI
             }
             for req in batch_request.requests
         ]
@@ -257,24 +289,64 @@ async def get_sample_requests():
     return {
         "sample_requests": [
             {
-                "request": "I forgot my password and can't log into my computer. How do I reset it?",
-                "user_id": "user001"
+                "request": "I've been locked out of my account. I tried logging in several times this morning but keep getting 'invalid password' errors. Can you please reset my password?",
+                "user_id": "user001",
+                "model": "gemini",
+                "type": "Password Reset/Forgotten Password"
             },
             {
-                "request": "I need to install Microsoft Office on my new laptop. Can you help?",
-                "user_id": "user002"
+                "request": "The printer on the 3rd floor isn't working. I sent my document to print but nothing is coming out. The printer display shows 'Ready' but my print job just disappeared from the queue.",
+                "user_id": "user002",
+                "model": "openai",
+                "type": "Printer Issues"
             },
             {
-                "request": "My internet connection is not working. I can't access any websites.",
-                "user_id": "user003"
+                "request": "My laptop has been running extremely slow for the past two days. It takes almost 10 minutes to boot up and applications like Outlook and Excel freeze constantly.",
+                "user_id": "user003",
+                "model": "gemini",
+                "type": "Slow Computer/Performance Issues"
             },
             {
-                "request": "I think I received a phishing email. It looks suspicious and asks for my login details.",
-                "user_id": "user004"
+                "request": "I can't connect to the office WiFi anymore. My laptop shows the network name but when I try to connect, it says 'Can't connect to this network.'",
+                "user_id": "user004",
+                "model": "openai",
+                "type": "Internet/Network Connectivity Problems"
             },
             {
-                "request": "My printer is not working. It shows an error message but I can't read it clearly.",
-                "user_id": "user005"
+                "request": "I need Adobe Acrobat Pro installed on my computer. I tried downloading it from the company software portal, but the installation keeps failing with error 1603.",
+                "user_id": "user005",
+                "model": "gemini",
+                "type": "Software Installation & Updates"
+            },
+            {
+                "request": "I'm not receiving any emails since yesterday afternoon. I can send emails fine, but my inbox hasn't updated. My email is working on my phone, just not on my computer.",
+                "user_id": "user006",
+                "model": "openai",
+                "type": "Email Problems"
+            },
+            {
+                "request": "I saved a PowerPoint presentation yesterday on my desktop but now I can't find it anywhere. I've searched my entire computer and checked the Recycle Bin. Can you recover it from a backup?",
+                "user_id": "user007",
+                "model": "gemini",
+                "type": "Lost/Missing Files"
+            },
+            {
+                "request": "My account has been locked due to too many failed login attempts. I was traveling yesterday and may have mistyped my password. Can you unlock my account?",
+                "user_id": "user008",
+                "model": "openai",
+                "type": "Account Lockouts"
+            },
+            {
+                "request": "Microsoft Teams keeps crashing on my computer. Every time I try to join a video call, the app freezes and then closes completely. Error message says 'Teams has stopped working.'",
+                "user_id": "user009",
+                "model": "gemini",
+                "type": "Application Errors/Crashes"
+            },
+            {
+                "request": "My external monitor stopped working this morning. It shows 'No Signal' and goes to sleep. I've checked all cables are plugged in securely. The monitor power light is on but no display.",
+                "user_id": "user010",
+                "model": "openai",
+                "type": "Hardware Issues"
             }
         ]
     }
@@ -313,9 +385,9 @@ if __name__ == "__main__":
     
     # Run the FastAPI application
     uvicorn.run(
-        "main:app",
+        "app:app",
         host="0.0.0.0",
-        port=8000,
+        port=8003,
         reload=True,  # Enable auto-reload for development
         log_level="info"
     )
