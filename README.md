@@ -9,8 +9,10 @@ A multi-agent AI help desk system built with LangChain and LangGraph that automa
 - **RAG-Powered Knowledge Base**: Searches and retrieves relevant information from markdown, JSON, and PDF documents
 - **Smart Escalation Logic**: Determines when human intervention is needed based on multiple factors
 - **LangGraph Workflow**: Orchestrates agents using state-based workflow management
-- **Google Gemini Integration**: Powered by Google's Gemini AI models
+- **Dual LLM Support**: Choose between Google Gemini and OpenAI per request
+- **Provider Comparison**: Benchmark both LLM providers side-by-side
 - **Vector Search**: ChromaDB-powered semantic search for knowledge retrieval
+- **RESTful API**: FastAPI-powered endpoints with interactive documentation
 
 ## 📁 Project Structure
 
@@ -53,7 +55,8 @@ ai_helpdesk/
 ### Prerequisites
 
 - Python 3.9+
-- Google API Key (for Gemini)
+- Google API Key (for Gemini) — required
+- OpenAI API Key — optional (for OpenAI provider and comparisons)
 
 ### Setup
 
@@ -83,8 +86,11 @@ ai_helpdesk/
    or create the .env file with the following parameter
 
    ```bash
-        # Google API Configuration
+        # Google API Configuration (Required)
         GOOGLE_API_KEY=your_google_api_key_here
+
+        # OpenAI API Configuration (Optional)
+        OPENAI_API_KEY=your_openai_api_key_here
 
         # Environment Settings
         ENVIRONMENT=development
@@ -92,7 +98,8 @@ ai_helpdesk/
         LOG_LEVEL=INFO
 
         # LLM Configuration
-        GEMINI_MODEL=gemini-1.5-flash
+        GEMINI_MODEL=gemini-2.0-flash
+        OPENAI_MODEL=gpt-3.5-turbo
         LLM_TEMPERATURE=0.1
         MAX_TOKENS=2000
 
@@ -119,12 +126,18 @@ ai_helpdesk/
 
 7. **Start the app**
    ```bash
-   uvicorn app:app --host 0.0.0.0 --port 8000
+   # Start with auto-reload (development)
+   uvicorn app:app --host 0.0.0.0 --port 8001 --reload
+
+   # Or start without reload (production-like)
+   uvicorn app:app --host 0.0.0.0 --port 8001
    ```
-This will:
-1. Initialize the system
-2. Expose funcitonalitites via REST APIs
-3. Read Docs and rest API [Here](http://localhost:8000/docs#) 
+The API will be available at:
+- API Base URL: http://localhost:8001
+- Interactive Docs: http://localhost:8001/docs
+- ReDoc: http://localhost:8001/redoc
+
+> For detailed API examples, see [API_USAGE.md](API_USAGE.md)
 
 ## 📚 Request Categories
 
@@ -139,6 +152,36 @@ The system automatically classifies requests into these categories:
 - **policy_question**: Company policy and procedure questions
 
 ## 🚀 Usage
+
+### Single Request with Model Selection
+
+```bash
+# Gemini (default)
+curl -X POST http://localhost:8001/process \
+  -H 'Content-Type: application/json' \
+  -d '{"request": "I forgot my password", "user_id": "user_001", "model": "gemini"}'
+
+# OpenAI
+curl -X POST http://localhost:8001/process \
+  -H 'Content-Type: application/json' \
+  -d '{"request": "Install Microsoft Office", "user_id": "user_002", "model": "openai"}'
+```
+
+### Batch Request with Mixed Models
+
+```bash
+curl -X POST http://localhost:8001/process/batch \
+  -H 'Content-Type: application/json' \
+  -d '{"requests": [{"request": "I forgot my password", "user_id": "user_001", "model": "gemini"}, {"request": "My printer is not working", "user_id": "user_003", "model": "openai"}]}'
+```
+
+### Compare Providers
+
+```bash
+curl -X POST http://localhost:8001/process/compare \
+  -H 'Content-Type: application/json' \
+  -d '{"request": "I think I received a phishing email", "user_id": "user_003"}'
+```
 
 ### Single Request
 
@@ -300,10 +343,18 @@ The system can process:
 3. **"Low response quality"**: Add more relevant documents to knowledge base
 4. **"Slow processing"**: Reduce knowledge base size or increase chunk size
 
-## Further Improvement
+## 📚 Documentation
+
+- [API_USAGE.md](API_USAGE.md): Comprehensive API usage guide with examples
+- [WARP.md](WARP.md): Development guidance for contributors
+- Interactive Docs: http://localhost:8001/docs
+
+## 🔮 Further Improvements
 1. Include a Database to persist requests and responses
-2. Include Docker & Dcoker Compose for Deployment and scalability
-3. Add Monitoring to See LLM Performance
+2. Include Docker & Docker Compose for deployment and scalability
+3. Add monitoring to track LLM performance metrics
+4. Implement caching for repeated queries
+5. Add support for more LLM providers (e.g., Claude)
 
 ## 🙏 Acknowledgments
 
