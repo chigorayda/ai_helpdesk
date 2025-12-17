@@ -42,7 +42,7 @@ class Settings:
             "GEMINI_MODEL", "google/gemini-2.0-flash-exp:free"
         )
         self.system_config.llm.temperature = float(os.getenv("LLM_TEMPERATURE", "0.1"))
-        self.system_config.llm.max_tokens = int(os.getenv("MAX_TOKENS", "2000"))
+        self.system_config.llm.max_tokens = int(os.getenv("MAX_TOKENS", "4000"))  # Increased from 2000
         
         # Knowledge base path
         self.system_config.knowledge_base_path = os.getenv(

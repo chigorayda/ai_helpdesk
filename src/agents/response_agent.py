@@ -23,7 +23,7 @@ class ResponseAgent:
     def __init__(self):
         """Initialize the response agent."""
         self.llm = llm_service
-        self.max_response_length = 1000
+        self.max_response_length = 5000  # Increased from 1000 to allow fuller responses
         self.min_confidence_for_direct_answer = 0.7
     
     def generate_response(

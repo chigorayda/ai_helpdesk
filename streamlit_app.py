@@ -137,10 +137,10 @@ if system is None:
     st.stop()
 
 # Initialize session state for question selection
-if 'selected_question' not in st.session_state:
-    st.session_state.selected_question = ''
-if 'question_timestamp' not in st.session_state:
-    st.session_state.question_timestamp = 0
+if 'current_question_tab1' not in st.session_state:
+    st.session_state.current_question_tab1 = ''
+if 'current_question_tab2' not in st.session_state:
+    st.session_state.current_question_tab2 = ''
 
 # Sidebar
 with st.sidebar:
@@ -154,8 +154,8 @@ with st.sidebar:
         with st.expander(f"❓ {sample['type']}"):
             st.write(sample['question'])
             if st.button(f"Use this question", key=f"sample_{idx}"):
-                st.session_state.selected_question = sample['question']
-                st.session_state.question_timestamp = idx + 1
+                st.session_state.current_question_tab1 = sample['question']
+                st.session_state.current_question_tab2 = sample['question']
                 st.rerun()
     
     st.markdown("---")
@@ -194,19 +194,16 @@ with tab1:
     col1, col2 = st.columns([3, 1])
     
     with col1:
-        # Get question from session state if selected from sidebar
-        default_question = st.session_state.selected_question if st.session_state.question_timestamp > 0 else ''
+        # Use session state to maintain question value
         question = st.text_area(
             "What do you need help with?",
-            value=default_question,
+            value=st.session_state.current_question_tab1,
             height=120,
             placeholder="e.g., I forgot my password and can't log in...",
-            key=f"process_question_{st.session_state.question_timestamp}"
+            key="process_question"
         )
-        # Clear the session state after it's loaded
-        if st.session_state.question_timestamp > 0:
-            st.session_state.selected_question = ''
-            st.session_state.question_timestamp = 0
+        # Update session state with current value
+        st.session_state.current_question_tab1 = question
     
     with col2:
         model = st.selectbox(
@@ -296,19 +293,16 @@ with tab2:
     st.header("Compare AI Models")
     st.write("See how Claude, GPT-4o Mini, and Gemini perform on the same question")
     
-    # Get question from session state if selected from sidebar
-    default_question_compare = st.session_state.selected_question if st.session_state.question_timestamp > 0 else ''
+    # Use session state to maintain question value
     compare_question = st.text_area(
         "Enter your question for comparison",
-        value=default_question_compare,
+        value=st.session_state.current_question_tab2,
         height=100,
         placeholder="e.g., I think I received a phishing email...",
-        key=f"compare_question_{st.session_state.question_timestamp}"
+        key="compare_question"
     )
-    # Clear the session state after it's loaded
-    if st.session_state.question_timestamp > 0:
-        st.session_state.selected_question = ''
-        st.session_state.question_timestamp = 0
+    # Update session state with current value
+    st.session_state.current_question_tab2 = compare_question
     
     compare_user_id = st.text_input("User ID (optional)", placeholder="user_001", key="compare_user")
     
@@ -441,6 +435,6 @@ with tab2:
 st.markdown("---")
 st.markdown("""
 <div style="text-align: center; color: #666; padding: 1rem;">
-    <p>🎯 IT Support Ticket System | Powered by OpenRouter | Built with Streamlit</p>
+    <p>🎯 IT Support Ticket System POC</p>
 </div>
 """, unsafe_allow_html=True)
