@@ -42,7 +42,7 @@ class HelpDeskRequestAPI(BaseModel):
     """API model for help desk requests."""
     request: str = Field(..., description="The user's help desk request text", min_length=1)
     user_id: Optional[str] = Field(None, description="Optional user identifier")
-    model: Optional[str] = Field("gemini", description="LLM provider to use: 'gemini' or 'openai'", pattern="^(gemini|openai)$")
+    model: Optional[str] = Field("claude", description="LLM provider to use: 'claude', 'gpt4o-mini', or 'gemini'", pattern="^(claude|gpt4o-mini|gemini)$")
 
 
 class BatchRequestAPI(BaseModel):
@@ -165,7 +165,12 @@ def process_request(
         from src.models.schemas import LLMProvider
         
         # Map model string to LLMProvider enum
-        provider = LLMProvider.OPENAI if request.model and request.model.lower() == "openai" else LLMProvider.GEMINI
+        model_map = {
+            "claude": LLMProvider.CLAUDE,
+            "gpt4o-mini": LLMProvider.GPT4O_MINI, 
+            "gemini": LLMProvider.GEMINI
+        }
+        provider = model_map.get(request.model.lower() if request.model else "claude", LLMProvider.CLAUDE)
         
         response =  system.process_request_sync(
             request_text=request.request,
@@ -190,7 +195,10 @@ async def compare_providers(
     system: HelpDeskSystem = Depends(get_system)
 ):
     """
-    Compare Gemini and OpenAI processing for the same request.
+    Compare Claude 3.5 Sonnet, GPT-4o Mini, and Gemini 2.0 Flash for the same request.
+    
+    Returns performance metrics, costs, and full responses from all three models,
+    along with a determination of which model performed best based on confidence and cost.
     """
     try:
         response = await system.compare_providers(
@@ -223,12 +231,19 @@ def process_batch_requests(
         # Import LLMProvider enum
         from src.models.schemas import LLMProvider
         
+        # Map model strings to LLMProvider enum
+        model_map = {
+            "claude": LLMProvider.CLAUDE,
+            "gpt4o-mini": LLMProvider.GPT4O_MINI,
+            "gemini": LLMProvider.GEMINI
+        }
+        
         # Convert API models to dictionaries
         requests_data = [
             {
                 "request": req.request,
                 "user_id": req.user_id,
-                "provider": LLMProvider.OPENAI if req.model and req.model.lower() == "openai" else LLMProvider.GEMINI
+                "provider": model_map.get(req.model.lower() if req.model else "claude", LLMProvider.CLAUDE)
             }
             for req in batch_request.requests
         ]
@@ -291,13 +306,13 @@ async def get_sample_requests():
             {
                 "request": "I've been locked out of my account. I tried logging in several times this morning but keep getting 'invalid password' errors. Can you please reset my password?",
                 "user_id": "user001",
-                "model": "gemini",
+                "model": "claude",
                 "type": "Password Reset/Forgotten Password"
             },
             {
                 "request": "The printer on the 3rd floor isn't working. I sent my document to print but nothing is coming out. The printer display shows 'Ready' but my print job just disappeared from the queue.",
                 "user_id": "user002",
-                "model": "openai",
+                "model": "gpt4o-mini",
                 "type": "Printer Issues"
             },
             {
@@ -309,43 +324,43 @@ async def get_sample_requests():
             {
                 "request": "I can't connect to the office WiFi anymore. My laptop shows the network name but when I try to connect, it says 'Can't connect to this network.'",
                 "user_id": "user004",
-                "model": "openai",
+                "model": "gpt4o-mini",
                 "type": "Internet/Network Connectivity Problems"
             },
             {
                 "request": "I need Adobe Acrobat Pro installed on my computer. I tried downloading it from the company software portal, but the installation keeps failing with error 1603.",
                 "user_id": "user005",
-                "model": "gemini",
+                "model": "claude",
                 "type": "Software Installation & Updates"
             },
             {
                 "request": "I'm not receiving any emails since yesterday afternoon. I can send emails fine, but my inbox hasn't updated. My email is working on my phone, just not on my computer.",
                 "user_id": "user006",
-                "model": "openai",
+                "model": "gpt4o-mini",
                 "type": "Email Problems"
             },
             {
                 "request": "I saved a PowerPoint presentation yesterday on my desktop but now I can't find it anywhere. I've searched my entire computer and checked the Recycle Bin. Can you recover it from a backup?",
                 "user_id": "user007",
-                "model": "gemini",
+                "model": "claude",
                 "type": "Lost/Missing Files"
             },
             {
                 "request": "My account has been locked due to too many failed login attempts. I was traveling yesterday and may have mistyped my password. Can you unlock my account?",
                 "user_id": "user008",
-                "model": "openai",
+                "model": "gpt4o-mini",
                 "type": "Account Lockouts"
             },
             {
                 "request": "Microsoft Teams keeps crashing on my computer. Every time I try to join a video call, the app freezes and then closes completely. Error message says 'Teams has stopped working.'",
                 "user_id": "user009",
-                "model": "gemini",
+                "model": "claude",
                 "type": "Application Errors/Crashes"
             },
             {
                 "request": "My external monitor stopped working this morning. It shows 'No Signal' and goes to sleep. I've checked all cables are plugged in securely. The monitor power light is on but no display.",
                 "user_id": "user010",
-                "model": "openai",
+                "model": "gpt4o-mini",
                 "type": "Hardware Issues"
             }
         ]

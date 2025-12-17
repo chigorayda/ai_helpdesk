@@ -231,6 +231,41 @@ class HelpDeskSystem:
             logger.error(f"Error processing request: {str(e)}")
             raise
     
+    def _calculate_hallucination_score(self, confidence: float, num_sources: int, escalated: bool) -> float:
+        """
+        Calculate a hallucination risk score (0.0 to 1.0, lower is better).
+        
+        Args:
+            confidence: Classification/response confidence (0-1)
+            num_sources: Number of knowledge sources used
+            escalated: Whether request was escalated
+            
+        Returns:
+            Hallucination score (0.0 = low risk, 1.0 = high risk)
+        """
+        score = 0.0
+        
+        # Low confidence increases hallucination risk
+        if confidence < 0.5:
+            score += 0.5
+        elif confidence < 0.7:
+            score += 0.3
+        elif confidence < 0.85:
+            score += 0.1
+        
+        # No knowledge sources = higher risk of making things up
+        if num_sources == 0:
+            score += 0.3
+        elif num_sources == 1:
+            score += 0.1
+        
+        # Escalated requests might indicate uncertainty
+        if escalated:
+            score += 0.1
+        
+        # Cap at 1.0
+        return min(score, 1.0)
+    
     def batch_process_requests(self, requests: List[Dict[str, str]]) -> List[HelpDeskResponse]:
         """
         Process multiple requests in batch.
@@ -285,20 +320,73 @@ class HelpDeskSystem:
     
     async def compare_providers(self, request_text: str, user_id: str = None) -> ComparisonResponse:
         """
-        Compare Gemini and OpenAI processing for the same request.
+        Compare Claude, GPT-4o Mini, and Gemini processing for the same request.
         
         Args:
             request_text: The user's request text
             user_id: Optional user identifier
             
         Returns:
-            ComparisonResponse with metrics and responses from both providers
+            ComparisonResponse with metrics and responses from all three providers
         """
         if not self.is_initialized:
             raise RuntimeError("Help desk system not initialized. Call initialize() first.")
 
         request_id = str(uuid.uuid4())
         input_tokens = cost_service.estimate_tokens(request_text)
+        logger.info(f"Comparison request tokens - Input: {input_tokens}")
+        
+        # Process with Claude
+        logger.info(f"Processing comparison request with Claude...")
+        settings.system_config.llm.provider = LLMProvider.CLAUDE
+        claude_start = datetime.now()
+        claude_response = await self.process_request(request_text, user_id)
+        claude_duration = (datetime.now() - claude_start).total_seconds()
+        
+        claude_output_tokens = cost_service.estimate_tokens(claude_response.response)
+        claude_cost = cost_service.calculate_cost(LLMProvider.CLAUDE, input_tokens, claude_output_tokens)
+        logger.info(f"Claude - Output tokens: {claude_output_tokens}, Cost: ${claude_cost:.6f}")
+        
+        # Calculate hallucination score based on confidence and response characteristics
+        claude_hallucination = self._calculate_hallucination_score(
+            claude_response.confidence,
+            len(claude_response.knowledge_sources),
+            claude_response.escalation.should_escalate
+        )
+        
+        claude_metrics = ComparisonMetrics(
+            provider=LLMProvider.CLAUDE,
+            processing_time=claude_duration,
+            estimated_cost=claude_cost,
+            hallucination_score=claude_hallucination,
+            response_quality=claude_response.confidence
+        )
+        
+        # Process with GPT-4o Mini
+        logger.info(f"Processing comparison request with GPT-4o Mini...")
+        settings.system_config.llm.provider = LLMProvider.GPT4O_MINI
+        gpt4o_start = datetime.now()
+        gpt4o_response = await self.process_request(request_text, user_id)
+        gpt4o_duration = (datetime.now() - gpt4o_start).total_seconds()
+        
+        gpt4o_output_tokens = cost_service.estimate_tokens(gpt4o_response.response)
+        gpt4o_cost = cost_service.calculate_cost(LLMProvider.GPT4O_MINI, input_tokens, gpt4o_output_tokens)
+        logger.info(f"GPT-4o Mini - Output tokens: {gpt4o_output_tokens}, Cost: ${gpt4o_cost:.6f}")
+        
+        # Calculate hallucination score
+        gpt4o_hallucination = self._calculate_hallucination_score(
+            gpt4o_response.confidence,
+            len(gpt4o_response.knowledge_sources),
+            gpt4o_response.escalation.should_escalate
+        )
+        
+        gpt4o_metrics = ComparisonMetrics(
+            provider=LLMProvider.GPT4O_MINI,
+            processing_time=gpt4o_duration,
+            estimated_cost=gpt4o_cost,
+            hallucination_score=gpt4o_hallucination,
+            response_quality=gpt4o_response.confidence
+        )
         
         # Process with Gemini
         logger.info(f"Processing comparison request with Gemini...")
@@ -309,49 +397,43 @@ class HelpDeskSystem:
         
         gemini_output_tokens = cost_service.estimate_tokens(gemini_response.response)
         gemini_cost = cost_service.calculate_cost(LLMProvider.GEMINI, input_tokens, gemini_output_tokens)
+        logger.info(f"Gemini - Output tokens: {gemini_output_tokens}, Cost: ${gemini_cost:.6f}")
+        
+        # Calculate hallucination score
+        gemini_hallucination = self._calculate_hallucination_score(
+            gemini_response.confidence,
+            len(gemini_response.knowledge_sources),
+            gemini_response.escalation.should_escalate
+        )
         
         gemini_metrics = ComparisonMetrics(
             provider=LLMProvider.GEMINI,
             processing_time=gemini_duration,
             estimated_cost=gemini_cost,
-            hallucination_score=0.1 if gemini_response.confidence < 0.7 else 0.0, # Placeholder logic
+            hallucination_score=gemini_hallucination,
             response_quality=gemini_response.confidence
         )
         
-        # Process with OpenAI
-        logger.info(f"Processing comparison request with OpenAI...")
-        settings.system_config.llm.provider = LLMProvider.OPENAI
-        openai_start = datetime.now()
-        openai_response = await self.process_request(request_text, user_id)
-        openai_duration = (datetime.now() - openai_start).total_seconds()
+        # Determine winner based on confidence, tie-break with cost
+        responses_with_metrics = [
+            (claude_response, claude_cost, LLMProvider.CLAUDE),
+            (gpt4o_response, gpt4o_cost, LLMProvider.GPT4O_MINI),
+            (gemini_response, gemini_cost, LLMProvider.GEMINI)
+        ]
         
-        openai_output_tokens = cost_service.estimate_tokens(openai_response.response)
-        openai_cost = cost_service.calculate_cost(LLMProvider.OPENAI, input_tokens, openai_output_tokens)
-        
-        openai_metrics = ComparisonMetrics(
-            provider=LLMProvider.OPENAI,
-            processing_time=openai_duration,
-            estimated_cost=openai_cost,
-            hallucination_score=0.1 if openai_response.confidence < 0.7 else 0.0, # Placeholder logic
-            response_quality=openai_response.confidence
-        )
-        
-        # Determine winner based on a simple heuristic (quality/cost ratio? simply confidence?)
-        # Here we just prefer higher confidence, tie-break with lower cost
-        if gemini_response.confidence > openai_response.confidence:
-            winner = LLMProvider.GEMINI
-        elif openai_response.confidence > gemini_response.confidence:
-            winner = LLMProvider.OPENAI
-        else:
-            winner = LLMProvider.GEMINI if gemini_cost < openai_cost else LLMProvider.OPENAI
+        # Sort by confidence (desc), then cost (asc)
+        responses_with_metrics.sort(key=lambda x: (-x[0].confidence, x[1]))
+        winner = responses_with_metrics[0][2]
 
         return ComparisonResponse(
             request_id=request_id,
             original_request=request_text,
+            claude_metrics=claude_metrics,
+            gpt4o_mini_metrics=gpt4o_metrics,
             gemini_metrics=gemini_metrics,
-            openai_metrics=openai_metrics,
+            claude_response=claude_response,
+            gpt4o_mini_response=gpt4o_response,
             gemini_response=gemini_response,
-            openai_response=openai_response,
             winner=winner
         )
 
@@ -401,7 +483,9 @@ class HelpDeskSystem:
                 "knowledge_base": vector_stats,
                 "workflow_metrics": workflow_metrics,
                 "configuration": {
-                    "model": settings.system_config.llm.model_name,
+                    "claude_model": settings.system_config.llm.claude_model,
+                    "gpt4o_mini_model": settings.system_config.llm.gpt4o_mini_model,
+                    "gemini_model": settings.system_config.llm.gemini_model,
                     "temperature": settings.system_config.llm.temperature,
                     "escalation_threshold": settings.system_config.escalation_threshold,
                     "min_confidence_threshold": settings.system_config.min_confidence_threshold

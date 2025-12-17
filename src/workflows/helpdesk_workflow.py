@@ -110,7 +110,20 @@ class HelpDeskWorkflow:
             
             # Run the workflow
             config = config or {"configurable": {"thread_id": request.id}}
-            final_state = await self.workflow.ainvoke(initial_state, config=config)
+            result = await self.workflow.ainvoke(initial_state, config=config)
+            
+            # LangGraph may return dict or WorkflowState, handle both
+            if isinstance(result, dict):
+                final_state = WorkflowState(
+                    request=result.get('request', request),
+                    classification=result.get('classification'),
+                    retrieval_result=result.get('retrieval_result'),
+                    response=result.get('response'),
+                    escalation=result.get('escalation'),
+                    errors=result.get('errors', [])
+                )
+            else:
+                final_state = result
             
             # Create the final response
             processing_time = time.time() - start_time

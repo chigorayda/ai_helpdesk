@@ -37,3 +37,7 @@ flake8==7.0.0
 # Optional: For enhanced document processing
 beautifulsoup4==4.12.2
 lxml==5.1.0
+
+sentence-transformers
+streamlit
+pandas

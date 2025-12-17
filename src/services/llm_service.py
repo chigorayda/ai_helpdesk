@@ -1,12 +1,11 @@
 """
-LLM service for interacting with Google Gemini and OpenAI.
+LLM service for interacting with multiple models via OpenRouter.
 """
 import time
 import logging
 from typing import Optional, Dict, Any, List
-import google.generativeai as genai
-from langchain_google_genai import GoogleGenerativeAI, GoogleGenerativeAIEmbeddings
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_openai import ChatOpenAI
+from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from config.settings import settings
 from src.models.schemas import LLMProvider
@@ -15,113 +14,118 @@ logger = logging.getLogger(__name__)
 
 
 class LLMService:
-    """Service for LLM operations using Google Gemini and OpenAI."""
+    """Service for LLM operations using OpenRouter."""
     
     def __init__(self):
         """Initialize the LLM service."""
         self._setup_providers()
         
     def _setup_providers(self):
-        """Setup LLM providers."""
-        # Setup Gemini
-        if settings.google_api_key:
-            print("Configuring Google Gemini LLM...")
-            genai.configure(api_key=settings.google_api_key)
-            self.gemini_llm = GoogleGenerativeAI(
-                model=settings.system_config.llm.model_name,
-                temperature=settings.system_config.llm.temperature,
-                max_tokens=settings.system_config.llm.max_tokens,
-                google_api_key=settings.google_api_key
-            )
-            self.gemini_embeddings = GoogleGenerativeAIEmbeddings(
-                model=settings.system_config.vector_store.embedding_model,
-                google_api_key=settings.google_api_key
-            )
+        """Setup LLM providers via OpenRouter."""
+        if not settings.openrouter_api_key:
+            raise ValueError("OPENROUTER_API_KEY is required but not set")
         
-        # Setup OpenAI
-        if settings.openai_api_key:
-            # Note: Using explicit args to avoid pydantic issues with recent langchain versions
-            print("Configuring OpenAI LLM...")
-            self.openai_llm = ChatOpenAI(
-                model=settings.system_config.llm.openai_model_name,
-                temperature=settings.system_config.llm.temperature,
-                max_tokens=settings.system_config.llm.max_tokens,
-                openai_api_key=settings.openai_api_key
-            )
-            self.openai_embeddings = OpenAIEmbeddings(
-                openai_api_key=settings.openai_api_key
-            )
+        print("Configuring OpenRouter LLMs...")
+        
+        # Setup Claude 3.5 Sonnet via OpenRouter
+        self.claude_llm = ChatOpenAI(
+            model=settings.system_config.llm.claude_model,
+            temperature=settings.system_config.llm.temperature,
+            max_tokens=settings.system_config.llm.max_tokens,
+            openai_api_key=settings.openrouter_api_key,
+            openai_api_base="https://openrouter.ai/api/v1",
+            default_headers={
+                "HTTP-Referer": "https://github.com/ai-helpdesk",
+                "X-Title": "AI Help Desk System"
+            }
+        )
+        
+        # Setup GPT-4o Mini via OpenRouter
+        self.gpt4o_mini_llm = ChatOpenAI(
+            model=settings.system_config.llm.gpt4o_mini_model,
+            temperature=settings.system_config.llm.temperature,
+            max_tokens=settings.system_config.llm.max_tokens,
+            openai_api_key=settings.openrouter_api_key,
+            openai_api_base="https://openrouter.ai/api/v1",
+            default_headers={
+                "HTTP-Referer": "https://github.com/ai-helpdesk",
+                "X-Title": "AI Help Desk System"
+            }
+        )
+        
+        # Setup Gemini 2.0 Flash via OpenRouter
+        self.gemini_llm = ChatOpenAI(
+            model=settings.system_config.llm.gemini_model,
+            temperature=settings.system_config.llm.temperature,
+            max_tokens=settings.system_config.llm.max_tokens,
+            openai_api_key=settings.openrouter_api_key,
+            openai_api_base="https://openrouter.ai/api/v1",
+            default_headers={
+                "HTTP-Referer": "https://github.com/ai-helpdesk",
+                "X-Title": "AI Help Desk System"
+            }
+        )
+        
+        # Setup embeddings using Sentence Transformers (local, free)
+        print("Initializing Sentence Transformers embeddings...")
+        self.embeddings = HuggingFaceEmbeddings(
+            model_name="sentence-transformers/all-MiniLM-L6-v2",
+            model_kwargs={'device': 'cpu'},
+            encode_kwargs={'normalize_embeddings': True}
+        )
+        print("Embeddings initialized with all-MiniLM-L6-v2")
             
         # Set default provider
         self.provider = settings.system_config.llm.provider
+        
+        print(f"OpenRouter configured with Claude, GPT-4o Mini, and Gemini 2.0 Flash")
+        print(f"Default provider: {self.provider.value}")
         
     def get_llm(self, provider: Optional[LLMProvider] = None):
         """Get the specified LLM instance."""
         target_provider = provider or self.provider
         
-        if target_provider == LLMProvider.OPENAI:
-            if not hasattr(self, 'openai_llm'):
-                raise ValueError("OpenAI API key not configured")
-            return self.openai_llm
-        else:
-            if not hasattr(self, 'gemini_llm'):
-                raise ValueError("Google API key not configured")
+        if target_provider == LLMProvider.CLAUDE:
+            return self.claude_llm
+        elif target_provider == LLMProvider.GPT4O_MINI:
+            return self.gpt4o_mini_llm
+        elif target_provider == LLMProvider.GEMINI:
             return self.gemini_llm
+        else:
+            raise ValueError(f"Unknown provider: {target_provider}")
 
-    def get_embeddings(self, texts: list[str], provider: Optional[LLMProvider] = None) -> list[list[float]]:
+    def get_embeddings(self, texts: list[str]) -> list[list[float]]:
         """
-        Get embeddings for a list of texts.
+        Get embeddings for a list of texts using Sentence Transformers.
         
         Args:
             texts: List of texts to embed
-            provider: Optional provider override
             
         Returns:
             List of embedding vectors
         """
         try:
             start_time = time.time()
-            target_provider = provider or self.provider
-            
-            if target_provider == LLMProvider.OPENAI:
-                if not hasattr(self, 'openai_embeddings'):
-                    raise ValueError("OpenAI API key not configured")
-                embeddings = self.openai_embeddings.embed_documents(texts)
-            else:
-                if not hasattr(self, 'gemini_embeddings'):
-                    raise ValueError("Google API key not configured")
-                embeddings = self.gemini_embeddings.embed_documents(texts)
-                
+            embeddings = self.embeddings.embed_documents(texts)
             processing_time = time.time() - start_time
-            logger.info(f"Generated embeddings for {len(texts)} texts using {target_provider} in {processing_time:.2f}s")
+            logger.info(f"Generated embeddings for {len(texts)} texts using Sentence Transformers in {processing_time:.2f}s")
             return embeddings
         except Exception as e:
             logger.error(f"Error generating embeddings: {str(e)}")
             raise
 
-    def get_embedding(self, text: str, provider: Optional[LLMProvider] = None) -> list[float]:
+    def get_embedding(self, text: str) -> list[float]:
         """
-        Get embedding for a single text.
+        Get embedding for a single text using Sentence Transformers.
         
         Args:
             text: Text to embed
-            provider: Optional provider override
             
         Returns:
             Embedding vector
         """
         try:
-            target_provider = provider or self.provider
-            
-            if target_provider == LLMProvider.OPENAI:
-                if not hasattr(self, 'openai_embeddings'):
-                    raise ValueError("OpenAI API key not configured")
-                embedding = self.openai_embeddings.embed_query(text)
-            else:
-                if not hasattr(self, 'gemini_embeddings'):
-                    raise ValueError("Google API key not configured")
-                embedding = self.gemini_embeddings.embed_query(text)
-                
+            embedding = self.embeddings.embed_query(text)
             return embedding
         except Exception as e:
             logger.error(f"Error generating embedding: {str(e)}")
@@ -163,12 +167,9 @@ class LLMService:
                 # For now we rely on the default config or separate instantiation if needed
                 pass
 
-            if target_provider == LLMProvider.OPENAI:
-                response = await llm.ainvoke(messages)
-                text = response.content
-            else:
-                response = await llm.agenerate([messages])
-                text = response.generations[0][0].text
+            # All providers use ChatOpenAI interface via OpenRouter
+            response = await llm.ainvoke(messages)
+            text = response.content
             
             processing_time = time.time() - start_time
             logger.info(f"LLM response generated in {processing_time:.2f}s using {target_provider}")
@@ -209,16 +210,9 @@ class LLMService:
                 messages.append(SystemMessage(content=system_message))
             messages.append(HumanMessage(content=prompt))
 
-            if target_provider == LLMProvider.OPENAI:
-                 response = llm.invoke(messages)
-                 text = response.content
-            else:
-                # Gemini/LangChain Google GenAI specific
-                full_prompt = ""
-                if system_message:
-                    full_prompt += f"System: {system_message}\n\n"
-                full_prompt += f"User: {prompt}\n\nAssistant:"
-                text = llm.invoke(full_prompt)
+            # All providers use ChatOpenAI interface via OpenRouter
+            response = llm.invoke(messages)
+            text = response.content
             
             processing_time = time.time() - start_time
             logger.info(f"LLM response generated in {processing_time:.2f}s using {target_provider}")

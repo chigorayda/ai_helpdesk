@@ -116,19 +116,22 @@ class VectorStoreConfig(BaseModel):
 
 
 class LLMProvider(str, Enum):
-    """Available LLM providers."""
-    GEMINI = "gemini"
-    OPENAI = "openai"
+    """Available LLM providers via OpenRouter."""
+    CLAUDE = "claude"  # Claude 3.5 Sonnet
+    GPT4O_MINI = "gpt4o-mini"  # GPT-4o Mini
+    GEMINI = "gemini"  # Gemini 2.0 Flash
 
 
 class LLMConfig(BaseModel):
     """Configuration for LLM service."""
-    provider: LLMProvider = LLMProvider.GEMINI
-    model_name: str = "gemini-1.5-flash"
-    openai_model_name: str = "gpt-3.5-turbo"
+    provider: LLMProvider = LLMProvider.CLAUDE
+    claude_model: str = "anthropic/claude-3.5-sonnet"
+    gpt4o_mini_model: str = "openai/gpt-4o-mini"
+    gemini_model: str = "google/gemini-2.0-flash-exp:free"
     temperature: float = 0.1
     max_tokens: int = 2000
     timeout: int = 30
+    openrouter_api_key: Optional[str] = None
 
 class SystemConfig(BaseModel):
     """Overall system configuration."""
@@ -151,8 +154,10 @@ class ComparisonResponse(BaseModel):
     """Response comparing different LLM providers."""
     request_id: str
     original_request: str
+    claude_metrics: ComparisonMetrics
+    gpt4o_mini_metrics: ComparisonMetrics
     gemini_metrics: ComparisonMetrics
-    openai_metrics: ComparisonMetrics
+    claude_response: HelpDeskResponse
+    gpt4o_mini_response: HelpDeskResponse
     gemini_response: HelpDeskResponse
-    openai_response: HelpDeskResponse
     winner: LLMProvider

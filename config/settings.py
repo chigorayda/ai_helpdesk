@@ -19,8 +19,8 @@ class Settings:
     
     def _load_env_variables(self):
         """Load environment variables."""
-        self.google_api_key: str = os.getenv("GOOGLE_API_KEY", "")
-        self.openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
+        self.openrouter_api_key: str = os.getenv("OPENROUTER_API_KEY", "")
+        self.openai_api_key: str = os.getenv("OPENAI_API_KEY", "")  # Optional, for embeddings
         self.environment: str = os.getenv("ENVIRONMENT", "development")
         self.log_level: str = os.getenv("LOG_LEVEL", "INFO")
         self.debug: bool = os.getenv("DEBUG", "false").lower() == "true"
@@ -30,12 +30,16 @@ class Settings:
             "VECTOR_STORE_PATH", "./data/vector_store"
         )
         
-        # LLM settings
-        self.system_config.llm.model_name = os.getenv(
-            "GEMINI_MODEL", "gemini-1.5-flash"
+        # LLM settings - OpenRouter models
+        self.system_config.llm.openrouter_api_key = self.openrouter_api_key
+        self.system_config.llm.claude_model = os.getenv(
+            "CLAUDE_MODEL", "anthropic/claude-3.5-sonnet"
         )
-        self.system_config.llm.openai_model_name = os.getenv(
-            "OPENAI_MODEL", "gpt-3.5-turbo"
+        self.system_config.llm.gpt4o_mini_model = os.getenv(
+            "GPT4O_MINI_MODEL", "openai/gpt-4o-mini"
+        )
+        self.system_config.llm.gemini_model = os.getenv(
+            "GEMINI_MODEL", "google/gemini-2.0-flash-exp:free"
         )
         self.system_config.llm.temperature = float(os.getenv("LLM_TEMPERATURE", "0.1"))
         self.system_config.llm.max_tokens = int(os.getenv("MAX_TOKENS", "2000"))
@@ -55,8 +59,8 @@ class Settings:
     
     def validate_settings(self) -> bool:
         """Validate that all required settings are present."""
-        if not self.google_api_key:
-            raise ValueError("GOOGLE_API_KEY is required but not set")
+        if not self.openrouter_api_key:
+            raise ValueError("OPENROUTER_API_KEY is required but not set")
         
         if not os.path.exists(self.system_config.knowledge_base_path):
             os.makedirs(self.system_config.knowledge_base_path, exist_ok=True)

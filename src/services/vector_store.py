@@ -21,12 +21,8 @@ class VectorStoreService:
     
     def __init__(self):
         """Initialize the vector store service."""
-        # Get embeddings based on configured provider
-        from src.models.schemas import LLMProvider
-        if settings.system_config.llm.provider == LLMProvider.OPENAI:
-            self.embeddings = llm_service.openai_embeddings
-        else:
-            self.embeddings = llm_service.gemini_embeddings
+        # Get embeddings (Sentence Transformers)
+        self.embeddings = llm_service.embeddings
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=settings.system_config.vector_store.chunk_size,
             chunk_overlap=settings.system_config.vector_store.chunk_overlap,
