@@ -102,3 +102,4 @@ Dockerfile-not-finished
 WARP.md
 
 *.example
+/venv2
