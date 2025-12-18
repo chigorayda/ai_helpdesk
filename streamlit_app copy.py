@@ -141,8 +141,6 @@ if 'current_question_tab1' not in st.session_state:
     st.session_state.current_question_tab1 = ''
 if 'current_question_tab2' not in st.session_state:
     st.session_state.current_question_tab2 = ''
-if 'active_tab' not in st.session_state:
-    st.session_state.active_tab = 0
 
 # Sidebar
 with st.sidebar:
@@ -155,17 +153,10 @@ with st.sidebar:
     for idx, sample in enumerate(SAMPLE_QUESTIONS):
         with st.expander(f"❓ {sample['type']}"):
             st.write(sample['question'])
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button(f"Use in Ask", key=f"sample_tab1_{idx}"):
-                    st.session_state.current_question_tab1 = sample['question']
-                    st.session_state.active_tab = 0
-                    st.rerun()
-            with col2:
-                if st.button(f"Use in Compare", key=f"sample_tab2_{idx}"):
-                    st.session_state.current_question_tab2 = sample['question']
-                    st.session_state.active_tab = 1
-                    st.rerun()
+            if st.button(f"Use this question", key=f"sample_{idx}"):
+                st.session_state.current_question_tab1 = sample['question']
+                st.session_state.current_question_tab2 = sample['question']
+                st.rerun()
     
     st.markdown("---")
     st.subheader("ℹ️ About")
@@ -193,24 +184,17 @@ with st.sidebar:
 # Main content
 st.markdown('<h1 class="main-header">🎯 IT Support Ticket System</h1>', unsafe_allow_html=True)
 
-# Create tabs - removed tab2 from the list to use only tab1
-tab_titles = ["💬 Ask a Question", "📊 Compare Models"]
-selected_tab = st.radio("", tab_titles, horizontal=True, label_visibility="collapsed", index=st.session_state.active_tab, key="tab_selector")
-
-# Update active tab in session state
-if selected_tab == tab_titles[0]:
-    st.session_state.active_tab = 0
-else:
-    st.session_state.active_tab = 1
+# Create tabs
+tab1, tab2 = st.tabs(["💬 Ask a Question", "📊 Compare Models"])
 
 # Tab 1: Process single request
-if st.session_state.active_tab == 0:
+with tab1:
     st.header("Ask Your IT Question")
     
     col1, col2 = st.columns([3, 1])
     
     with col1:
-        # Use session state value directly
+        # Use session state to maintain question value
         question = st.text_area(
             "What do you need help with?",
             value=st.session_state.current_question_tab1,
@@ -218,33 +202,21 @@ if st.session_state.active_tab == 0:
             placeholder="e.g., I forgot my password and can't log in...",
             key="process_question"
         )
+        # Update session state with current value
+        st.session_state.current_question_tab1 = question
     
     with col2:
         model = st.selectbox(
             "Select Model",
-            options=["claude", "claude-sonnet-45", "gpt4o-mini", "gpt-52", "gemini", "gemini-3-pro", "grok-4-fast", "deepseek-v32", "qwen3-235b", "llama-31-8b"],
+            options=["claude", "gpt4o-mini", "gemini"],
             format_func=lambda x: {
                 "claude": "🤖 Claude 3.5 Sonnet",
-                "claude-sonnet-45": "🤖 Claude Sonnet 4.5",
                 "gpt4o-mini": "⚡ GPT-4o Mini",
-                "gpt-52": "⚡ GPT-5.2",
-                "gemini": "🌟 Gemini 2.0 Flash",
-                "gemini-3-pro": "🌟 Gemini 3 Pro",
-                "grok-4-fast": "🚀 Grok 4 Fast",
-                "deepseek-v32": "🔍 DeepSeek V3.2",
-                "qwen3-235b": "🎯 Qwen3 235B",
-                "llama-31-8b": "🦙 Llama 3.1 8B"
+                "gemini": "🌟 Gemini 2.0 Flash"
             }[x]
         )
         
         user_id = st.text_input("User ID (optional)", placeholder="user_001", key="process_user")
-        
-        # Speed mode toggle
-        lite_mode = st.checkbox("⚡ Fast Mode", value=False, help="Skip classification & escalation for 50-70% faster responses")
-        if lite_mode:
-            skip_knowledge = st.checkbox("🚀 Ultra Fast", value=False, help="Also skip knowledge search for maximum speed (less accurate)")
-        else:
-            skip_knowledge = False
     
     if st.button("🚀 Submit Question", type="primary", use_container_width=True):
         if not question:
@@ -255,33 +227,17 @@ if st.session_state.active_tab == 0:
                     # Map model to provider
                     provider_map = {
                         "claude": LLMProvider.CLAUDE,
-                        "claude-sonnet-45": LLMProvider.CLAUDE_SONNET_45,
                         "gpt4o-mini": LLMProvider.GPT4O_MINI,
-                        "gpt-52": LLMProvider.GPT_52,
-                        "gemini": LLMProvider.GEMINI,
-                        "gemini-3-pro": LLMProvider.GEMINI_3_PRO,
-                        "grok-4-fast": LLMProvider.GROK_4_FAST,
-                        "deepseek-v32": LLMProvider.DEEPSEEK_V32,
-                        "qwen3-235b": LLMProvider.QWEN3_235B,
-                        "llama-31-8b": LLMProvider.LLAMA_31_8B
+                        "gemini": LLMProvider.GEMINI
                     }
                     provider = provider_map[model]
                     
-                    # Process request with appropriate workflow
-                    if lite_mode:
-                        st.info("⚡ Using Fast Mode - Classification and escalation skipped for speed")
-                        response = system.process_request_lite(
-                            request_text=question,
-                            user_id=user_id if user_id else None,
-                            provider=provider,
-                            skip_knowledge=skip_knowledge
-                        )
-                    else:
-                        response = system.process_request_sync(
-                            request_text=question,
-                            user_id=user_id if user_id else None,
-                            provider=provider
-                        )
+                    # Process request
+                    response = system.process_request_sync(
+                        request_text=question,
+                        user_id=user_id if user_id else None,
+                        provider=provider
+                    )
                     
                     # Display response
                     st.success("✅ Response Generated!")
@@ -333,42 +289,9 @@ if st.session_state.active_tab == 0:
                     st.exception(e)
 
 # Tab 2: Compare models
-if st.session_state.active_tab == 1:
+with tab2:
     st.header("Compare AI Models")
-    st.write("Select and compare multiple AI models on the same question")
-    
-    # Model selection with multi-select
-    all_models = [
-        ("claude", "🤖 Claude 3.5 Sonnet"),
-        ("claude-sonnet-45", "🤖 Claude Sonnet 4.5"),
-        ("gpt4o-mini", "⚡ GPT-4o Mini"),
-        ("gpt-52", "⚡ GPT-5.2"),
-        ("gemini", "🌟 Gemini 2.0 Flash"),
-        ("gemini-3-pro", "🌟 Gemini 3 Pro"),
-        ("grok-4-fast", "🚀 Grok 4 Fast"),
-        ("deepseek-v32", "🔍 DeepSeek V3.2"),
-        ("qwen3-235b", "🎯 Qwen3 235B"),
-        ("llama-31-8b", "🦙 Llama 3.1 8B")
-    ]
-    
-    col1, col2 = st.columns([3, 1])
-    
-    with col1:
-        selected_models = st.multiselect(
-            "Select models to compare (default: 3)",
-            options=[m[0] for m in all_models],
-            default=["claude", "gpt4o-mini", "gemini"],
-            format_func=lambda x: dict(all_models)[x]
-        )
-    
-    with col2:
-        st.write("")
-        st.write("")
-        comparison_lite_mode = st.checkbox("⚡ Fast Mode", value=False, key="compare_lite", help="Use lite workflow for 50-70% faster comparison")
-        if comparison_lite_mode:
-            comparison_skip_knowledge = st.checkbox("🚀 Ultra Fast", value=False, key="compare_ultra", help="Skip knowledge retrieval")
-        else:
-            comparison_skip_knowledge = False
+    st.write("See how Claude, GPT-4o Mini, and Gemini perform on the same question")
     
     # Use session state to maintain question value
     compare_question = st.text_area(
@@ -386,39 +309,14 @@ if st.session_state.active_tab == 1:
     if st.button("🔬 Compare Models", type="primary", use_container_width=True):
         if not compare_question:
             st.error("Please enter a question!")
-        elif not selected_models:
-            st.error("Please select at least one model!")
         else:
-            with st.spinner(f"Running comparison across {len(selected_models)} models... This may take a minute."):
+            with st.spinner("Running comparison across all models... This may take a minute."):
                 try:
-                    # Map model strings to providers
-                    provider_map = {
-                        "claude": LLMProvider.CLAUDE,
-                        "claude-sonnet-45": LLMProvider.CLAUDE_SONNET_45,
-                        "gpt4o-mini": LLMProvider.GPT4O_MINI,
-                        "gpt-52": LLMProvider.GPT_52,
-                        "gemini": LLMProvider.GEMINI,
-                        "gemini-3-pro": LLMProvider.GEMINI_3_PRO,
-                        "grok-4-fast": LLMProvider.GROK_4_FAST,
-                        "deepseek-v32": LLMProvider.DEEPSEEK_V32,
-                        "qwen3-235b": LLMProvider.QWEN3_235B,
-                        "llama-31-8b": LLMProvider.LLAMA_31_8B
-                    }
-                    
-                    providers = [provider_map[m] for m in selected_models]
-                    
-                    # Show mode info
-                    if comparison_lite_mode:
-                        st.info("⚡ Using Fast Mode for comparison - Classification and escalation skipped")
-                    
                     # Run comparison
                     comparison_result = asyncio.run(
                         system.compare_providers(
                             request_text=compare_question,
-                            user_id=compare_user_id if compare_user_id else None,
-                            providers=providers,
-                            lite_mode=comparison_lite_mode,
-                            skip_knowledge=comparison_skip_knowledge
+                            user_id=compare_user_id if compare_user_id else None
                         )
                     )
                     
@@ -426,20 +324,27 @@ if st.session_state.active_tab == 1:
                     
                     # Winner announcement
                     winner = comparison_result.winner
-                    winner_display = dict(all_models)[winner.value]
+                    winner_name = {
+                        LLMProvider.CLAUDE: "🤖 Claude 3.5 Sonnet",
+                        LLMProvider.GPT4O_MINI: "⚡ GPT-4o Mini",
+                        LLMProvider.GEMINI: "🌟 Gemini 2.0 Flash"
+                    }[winner]
                     
                     st.markdown(f"""
                     <div style="background-color: #d4edda; padding: 1rem; border-radius: 0.5rem; text-align: center; margin: 1rem 0;">
-                        <h3>🏆 Best Performer: {winner_display}</h3>
+                        <h3>🏆 Best Performer: {winner_name}</h3>
                     </div>
                     """, unsafe_allow_html=True)
                     
-                    # Iterate through each provider in the comparison results
-                    for provider in comparison_result.providers:
-                        model_name = dict(all_models)[provider.value]
-                        response_data = comparison_result.responses[provider.value]
-                        metrics = comparison_result.metrics[provider.value]
-                        is_winner = provider == winner
+                    # Create comparison cards for each model
+                    models = [
+                        (LLMProvider.CLAUDE, "🤖 Claude 3.5 Sonnet", comparison_result.claude_response, comparison_result.claude_metrics),
+                        (LLMProvider.GPT4O_MINI, "⚡ GPT-4o Mini", comparison_result.gpt4o_mini_response, comparison_result.gpt4o_mini_metrics),
+                        (LLMProvider.GEMINI, "🌟 Gemini 2.0 Flash", comparison_result.gemini_response, comparison_result.gemini_metrics)
+                    ]
+                    
+                    for model_id, model_name, response_data, metrics in models:
+                        is_winner = model_id == winner
                         
                         with st.container():
                             # Model header with winner badge
@@ -496,23 +401,28 @@ if st.session_state.active_tab == 1:
                         import pandas as pd
                         
                         comparison_data = {
-                            "Model": [],
-                            "Cost ($)": [],
-                            "Time (s)": [],
-                            "Confidence": [],
-                            "Hallucination Risk": []
+                            "Model": ["Claude 3.5 Sonnet", "GPT-4o Mini", "Gemini 2.0 Flash"],
+                            "Cost ($)": [
+                                f"{comparison_result.claude_metrics.estimated_cost:.6f}",
+                                f"{comparison_result.gpt4o_mini_metrics.estimated_cost:.6f}",
+                                f"{comparison_result.gemini_metrics.estimated_cost:.6f}"
+                            ],
+                            "Time (s)": [
+                                f"{comparison_result.claude_metrics.processing_time:.2f}",
+                                f"{comparison_result.gpt4o_mini_metrics.processing_time:.2f}",
+                                f"{comparison_result.gemini_metrics.processing_time:.2f}"
+                            ],
+                            "Confidence": [
+                                f"{comparison_result.claude_response.confidence:.1%}",
+                                f"{comparison_result.gpt4o_mini_response.confidence:.1%}",
+                                f"{comparison_result.gemini_response.confidence:.1%}"
+                            ],
+                            "Hallucination Risk": [
+                                f"{comparison_result.claude_metrics.hallucination_score:.2f}",
+                                f"{comparison_result.gpt4o_mini_metrics.hallucination_score:.2f}",
+                                f"{comparison_result.gemini_metrics.hallucination_score:.2f}"
+                            ]
                         }
-                        
-                        for provider in comparison_result.providers:
-                            model_name = dict(all_models)[provider.value]
-                            response_data = comparison_result.responses[provider.value]
-                            metrics = comparison_result.metrics[provider.value]
-                            
-                            comparison_data["Model"].append(model_name)
-                            comparison_data["Cost ($)"].append(f"{metrics.estimated_cost:.6f}")
-                            comparison_data["Time (s)"].append(f"{metrics.processing_time:.2f}")
-                            comparison_data["Confidence"].append(f"{response_data.confidence:.1%}")
-                            comparison_data["Hallucination Risk"].append(f"{metrics.hallucination_score:.2f}")
                         
                         df = pd.DataFrame(comparison_data)
                         st.dataframe(df, use_container_width=True, hide_index=True)

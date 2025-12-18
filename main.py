@@ -12,6 +12,7 @@ import uuid
 from config.settings import settings
 from src.models.schemas import HelpDeskRequest, HelpDeskResponse
 from src.workflows.helpdesk_workflow import helpdesk_workflow
+from src.workflows.helpdesk_workflow_lite import helpdesk_workflow_lite
 from src.services.document_processor import document_processor
 from src.services.vector_store import vector_store_service
 
@@ -36,6 +37,7 @@ class HelpDeskSystem:
     def __init__(self):
         """Initialize the help desk system."""
         self.workflow = helpdesk_workflow
+        self.workflow_lite = helpdesk_workflow_lite
         self.document_processor = document_processor
         self.vector_store = vector_store_service
         self.is_initialized = False
@@ -231,6 +233,60 @@ class HelpDeskSystem:
             logger.error(f"Error processing request: {str(e)}")
             raise
     
+    def process_request_lite(
+        self, 
+        request_text: str, 
+        user_id: str = None, 
+        provider: Optional[LLMProvider] = None,
+        skip_knowledge: bool = False
+    ) -> HelpDeskResponse:
+        """
+        Process request using lite workflow (faster, skips classification and escalation).
+        
+        Args:
+            request_text: The user's request text
+            user_id: Optional user identifier
+            provider: Optional LLM provider to use
+            skip_knowledge: If True, skip knowledge retrieval for maximum speed
+            
+        Returns:
+            HelpDeskResponse with the result
+        """
+        if not self.is_initialized:
+            raise RuntimeError("Help desk system not initialized. Call initialize_sync() first.")
+        
+        try:
+            # Set provider if specified
+            original_provider = settings.system_config.llm.provider
+            if provider:
+                settings.system_config.llm.provider = provider
+                logger.info(f"[LITE MODE] Using {provider.value} provider")
+            
+            # Create request object
+            request = HelpDeskRequest(
+                id=str(uuid.uuid4()),
+                user_id=user_id,
+                request=request_text,
+                timestamp=datetime.now()
+            )
+            
+            logger.info(f"[LITE MODE] Processing request {request.id}: {request_text[:100]}...")
+            
+            # Process through lite workflow
+            response = self.workflow_lite.process_request_sync(request, skip_knowledge=skip_knowledge)
+            
+            # Restore original provider
+            if provider:
+                settings.system_config.llm.provider = original_provider
+            
+            logger.info(f"[LITE MODE] Request {request.id} processed in {response.processing_time:.2f}s")
+            
+            return response
+            
+        except Exception as e:
+            logger.error(f"[LITE MODE] Error processing request: {str(e)}")
+            raise
+    
     def _calculate_hallucination_score(self, confidence: float, num_sources: int, escalated: bool) -> float:
         """
         Calculate a hallucination risk score (0.0 to 1.0, lower is better).
@@ -318,122 +374,106 @@ class HelpDeskSystem:
         
         return responses
     
-    async def compare_providers(self, request_text: str, user_id: str = None) -> ComparisonResponse:
+    async def compare_providers(
+        self, 
+        request_text: str, 
+        user_id: str = None,
+        providers: Optional[List[LLMProvider]] = None,
+        lite_mode: bool = False,
+        skip_knowledge: bool = False
+    ) -> ComparisonResponse:
         """
-        Compare Claude, GPT-4o Mini, and Gemini processing for the same request.
+        Compare multiple LLM providers processing for the same request.
         
         Args:
             request_text: The user's request text
             user_id: Optional user identifier
+            providers: Optional list of providers to compare (defaults to Claude, GPT-4o Mini, Gemini)
+            lite_mode: If True, use lite workflow for all providers (faster)
+            skip_knowledge: If True and lite_mode=True, skip knowledge retrieval
             
         Returns:
-            ComparisonResponse with metrics and responses from all three providers
+            ComparisonResponse with metrics and responses from selected providers
         """
         if not self.is_initialized:
             raise RuntimeError("Help desk system not initialized. Call initialize() first.")
 
+        # Default to 3 models if none specified
+        if providers is None:
+            providers = [LLMProvider.CLAUDE, LLMProvider.GPT4O_MINI, LLMProvider.GEMINI]
+        
         request_id = str(uuid.uuid4())
         input_tokens = cost_service.estimate_tokens(request_text)
+        workflow_mode = "LITE" if lite_mode else "STANDARD"
         logger.info(f"Comparison request tokens - Input: {input_tokens}")
+        logger.info(f"Comparing {len(providers)} providers in {workflow_mode} mode: {[p.value for p in providers]}")
         
-        # Process with Claude
-        logger.info(f"Processing comparison request with Claude...")
-        settings.system_config.llm.provider = LLMProvider.CLAUDE
-        claude_start = datetime.now()
-        claude_response = await self.process_request(request_text, user_id)
-        claude_duration = (datetime.now() - claude_start).total_seconds()
+        # Store results for each provider
+        all_metrics = {}
+        all_responses = {}
+        responses_with_metrics = []
         
-        claude_output_tokens = cost_service.estimate_tokens(claude_response.response)
-        claude_cost = cost_service.calculate_cost(LLMProvider.CLAUDE, input_tokens, claude_output_tokens)
-        logger.info(f"Claude - Output tokens: {claude_output_tokens}, Cost: ${claude_cost:.6f}")
-        
-        # Calculate hallucination score based on confidence and response characteristics
-        claude_hallucination = self._calculate_hallucination_score(
-            claude_response.confidence,
-            len(claude_response.knowledge_sources),
-            claude_response.escalation.should_escalate
-        )
-        
-        claude_metrics = ComparisonMetrics(
-            provider=LLMProvider.CLAUDE,
-            processing_time=claude_duration,
-            estimated_cost=claude_cost,
-            hallucination_score=claude_hallucination,
-            response_quality=claude_response.confidence
-        )
-        
-        # Process with GPT-4o Mini
-        logger.info(f"Processing comparison request with GPT-4o Mini...")
-        settings.system_config.llm.provider = LLMProvider.GPT4O_MINI
-        gpt4o_start = datetime.now()
-        gpt4o_response = await self.process_request(request_text, user_id)
-        gpt4o_duration = (datetime.now() - gpt4o_start).total_seconds()
-        
-        gpt4o_output_tokens = cost_service.estimate_tokens(gpt4o_response.response)
-        gpt4o_cost = cost_service.calculate_cost(LLMProvider.GPT4O_MINI, input_tokens, gpt4o_output_tokens)
-        logger.info(f"GPT-4o Mini - Output tokens: {gpt4o_output_tokens}, Cost: ${gpt4o_cost:.6f}")
-        
-        # Calculate hallucination score
-        gpt4o_hallucination = self._calculate_hallucination_score(
-            gpt4o_response.confidence,
-            len(gpt4o_response.knowledge_sources),
-            gpt4o_response.escalation.should_escalate
-        )
-        
-        gpt4o_metrics = ComparisonMetrics(
-            provider=LLMProvider.GPT4O_MINI,
-            processing_time=gpt4o_duration,
-            estimated_cost=gpt4o_cost,
-            hallucination_score=gpt4o_hallucination,
-            response_quality=gpt4o_response.confidence
-        )
-        
-        # Process with Gemini
-        logger.info(f"Processing comparison request with Gemini...")
-        settings.system_config.llm.provider = LLMProvider.GEMINI
-        gemini_start = datetime.now()
-        gemini_response = await self.process_request(request_text, user_id)
-        gemini_duration = (datetime.now() - gemini_start).total_seconds()
-        
-        gemini_output_tokens = cost_service.estimate_tokens(gemini_response.response)
-        gemini_cost = cost_service.calculate_cost(LLMProvider.GEMINI, input_tokens, gemini_output_tokens)
-        logger.info(f"Gemini - Output tokens: {gemini_output_tokens}, Cost: ${gemini_cost:.6f}")
-        
-        # Calculate hallucination score
-        gemini_hallucination = self._calculate_hallucination_score(
-            gemini_response.confidence,
-            len(gemini_response.knowledge_sources),
-            gemini_response.escalation.should_escalate
-        )
-        
-        gemini_metrics = ComparisonMetrics(
-            provider=LLMProvider.GEMINI,
-            processing_time=gemini_duration,
-            estimated_cost=gemini_cost,
-            hallucination_score=gemini_hallucination,
-            response_quality=gemini_response.confidence
-        )
+        # Process with each provider
+        for provider in providers:
+            logger.info(f"Processing comparison request with {provider.value} ({workflow_mode})...")
+            settings.system_config.llm.provider = provider
+            provider_start = datetime.now()
+            
+            # Use appropriate workflow based on mode
+            if lite_mode:
+                # Create request for lite mode
+                request = HelpDeskRequest(
+                    id=str(uuid.uuid4()),
+                    user_id=user_id,
+                    request=request_text,
+                    timestamp=datetime.now()
+                )
+                provider_response = self.workflow_lite.process_request_sync(
+                    request, 
+                    skip_knowledge=skip_knowledge
+                )
+            else:
+                provider_response = await self.process_request(request_text, user_id)
+            
+            provider_duration = (datetime.now() - provider_start).total_seconds()
+            
+            output_tokens = cost_service.estimate_tokens(provider_response.response)
+            cost = cost_service.calculate_cost(provider, input_tokens, output_tokens)
+            logger.info(f"{provider.value} - Output tokens: {output_tokens}, Cost: ${cost:.6f}")
+            
+            # Calculate hallucination score
+            hallucination_score = self._calculate_hallucination_score(
+                provider_response.confidence,
+                len(provider_response.knowledge_sources),
+                provider_response.escalation.should_escalate
+            )
+            
+            # Create metrics
+            metrics = ComparisonMetrics(
+                provider=provider,
+                processing_time=provider_duration,
+                estimated_cost=cost,
+                hallucination_score=hallucination_score,
+                response_quality=provider_response.confidence
+            )
+            
+            # Store results
+            all_metrics[provider.value] = metrics
+            all_responses[provider.value] = provider_response
+            responses_with_metrics.append((provider_response, cost, provider))
         
         # Determine winner based on confidence, tie-break with cost
-        responses_with_metrics = [
-            (claude_response, claude_cost, LLMProvider.CLAUDE),
-            (gpt4o_response, gpt4o_cost, LLMProvider.GPT4O_MINI),
-            (gemini_response, gemini_cost, LLMProvider.GEMINI)
-        ]
-        
         # Sort by confidence (desc), then cost (asc)
         responses_with_metrics.sort(key=lambda x: (-x[0].confidence, x[1]))
         winner = responses_with_metrics[0][2]
+        logger.info(f"Winner: {winner.value}")
 
         return ComparisonResponse(
             request_id=request_id,
             original_request=request_text,
-            claude_metrics=claude_metrics,
-            gpt4o_mini_metrics=gpt4o_metrics,
-            gemini_metrics=gemini_metrics,
-            claude_response=claude_response,
-            gpt4o_mini_response=gpt4o_response,
-            gemini_response=gemini_response,
+            providers=providers,
+            metrics=all_metrics,
+            responses=all_responses,
             winner=winner
         )
 

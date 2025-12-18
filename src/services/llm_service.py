@@ -66,6 +66,97 @@ class LLMService:
             }
         )
         
+        # Setup Claude Sonnet 4.5 via OpenRouter
+        self.claude_sonnet_45_llm = ChatOpenAI(
+            model=settings.system_config.llm.claude_sonnet_45_model,
+            temperature=settings.system_config.llm.temperature,
+            max_tokens=settings.system_config.llm.max_tokens,
+            openai_api_key=settings.openrouter_api_key,
+            openai_api_base="https://openrouter.ai/api/v1",
+            default_headers={
+                "HTTP-Referer": "https://github.com/ai-helpdesk",
+                "X-Title": "AI Help Desk System"
+            }
+        )
+        
+        # Setup GPT-5.2 via OpenRouter
+        self.gpt_52_llm = ChatOpenAI(
+            model=settings.system_config.llm.gpt_52_model,
+            temperature=settings.system_config.llm.temperature,
+            max_tokens=settings.system_config.llm.max_tokens,
+            openai_api_key=settings.openrouter_api_key,
+            openai_api_base="https://openrouter.ai/api/v1",
+            default_headers={
+                "HTTP-Referer": "https://github.com/ai-helpdesk",
+                "X-Title": "AI Help Desk System"
+            }
+        )
+        
+        # Setup Gemini 3 Pro Preview via OpenRouter
+        self.gemini_3_pro_llm = ChatOpenAI(
+            model=settings.system_config.llm.gemini_3_pro_model,
+            temperature=settings.system_config.llm.temperature,
+            max_tokens=settings.system_config.llm.max_tokens,
+            openai_api_key=settings.openrouter_api_key,
+            openai_api_base="https://openrouter.ai/api/v1",
+            default_headers={
+                "HTTP-Referer": "https://github.com/ai-helpdesk",
+                "X-Title": "AI Help Desk System"
+            }
+        )
+        
+        # Setup Grok 4 Fast via OpenRouter
+        self.grok_4_fast_llm = ChatOpenAI(
+            model=settings.system_config.llm.grok_4_fast_model,
+            temperature=settings.system_config.llm.temperature,
+            max_tokens=settings.system_config.llm.max_tokens,
+            openai_api_key=settings.openrouter_api_key,
+            openai_api_base="https://openrouter.ai/api/v1",
+            default_headers={
+                "HTTP-Referer": "https://github.com/ai-helpdesk",
+                "X-Title": "AI Help Desk System"
+            }
+        )
+        
+        # Setup DeepSeek V3.2 via OpenRouter
+        self.deepseek_v32_llm = ChatOpenAI(
+            model=settings.system_config.llm.deepseek_v32_model,
+            temperature=settings.system_config.llm.temperature,
+            max_tokens=settings.system_config.llm.max_tokens,
+            openai_api_key=settings.openrouter_api_key,
+            openai_api_base="https://openrouter.ai/api/v1",
+            default_headers={
+                "HTTP-Referer": "https://github.com/ai-helpdesk",
+                "X-Title": "AI Help Desk System"
+            }
+        )
+        
+        # Setup Qwen3 235B via OpenRouter
+        self.qwen3_235b_llm = ChatOpenAI(
+            model=settings.system_config.llm.qwen3_235b_model,
+            temperature=settings.system_config.llm.temperature,
+            max_tokens=settings.system_config.llm.max_tokens,
+            openai_api_key=settings.openrouter_api_key,
+            openai_api_base="https://openrouter.ai/api/v1",
+            default_headers={
+                "HTTP-Referer": "https://github.com/ai-helpdesk",
+                "X-Title": "AI Help Desk System"
+            }
+        )
+        
+        # Setup Llama 3.1 8B Instruct via OpenRouter
+        self.llama_31_8b_llm = ChatOpenAI(
+            model=settings.system_config.llm.llama_31_8b_model,
+            temperature=settings.system_config.llm.temperature,
+            max_tokens=settings.system_config.llm.max_tokens,
+            openai_api_key=settings.openrouter_api_key,
+            openai_api_base="https://openrouter.ai/api/v1",
+            default_headers={
+                "HTTP-Referer": "https://github.com/ai-helpdesk",
+                "X-Title": "AI Help Desk System"
+            }
+        )
+        
         # Setup embeddings using Sentence Transformers (local, free)
         print("Initializing Sentence Transformers embeddings...")
         self.embeddings = HuggingFaceEmbeddings(
@@ -78,7 +169,7 @@ class LLMService:
         # Set default provider
         self.provider = settings.system_config.llm.provider
         
-        print(f"OpenRouter configured with Claude, GPT-4o Mini, and Gemini 2.0 Flash")
+        print(f"OpenRouter configured with 10 models: Claude 3.5, Claude 4.5, GPT-4o Mini, GPT-5.2, Gemini 2.0, Gemini 3 Pro, Grok 4 Fast, DeepSeek V3.2, Qwen3 235B, Llama 3.1 8B")
         print(f"Default provider: {self.provider.value}")
         
     def get_llm(self, provider: Optional[LLMProvider] = None):
@@ -87,10 +178,24 @@ class LLMService:
         
         if target_provider == LLMProvider.CLAUDE:
             return self.claude_llm
+        elif target_provider == LLMProvider.CLAUDE_SONNET_45:
+            return self.claude_sonnet_45_llm
         elif target_provider == LLMProvider.GPT4O_MINI:
             return self.gpt4o_mini_llm
+        elif target_provider == LLMProvider.GPT_52:
+            return self.gpt_52_llm
         elif target_provider == LLMProvider.GEMINI:
             return self.gemini_llm
+        elif target_provider == LLMProvider.GEMINI_3_PRO:
+            return self.gemini_3_pro_llm
+        elif target_provider == LLMProvider.GROK_4_FAST:
+            return self.grok_4_fast_llm
+        elif target_provider == LLMProvider.DEEPSEEK_V32:
+            return self.deepseek_v32_llm
+        elif target_provider == LLMProvider.QWEN3_235B:
+            return self.qwen3_235b_llm
+        elif target_provider == LLMProvider.LLAMA_31_8B:
+            return self.llama_31_8b_llm
         else:
             raise ValueError(f"Unknown provider: {target_provider}")
 

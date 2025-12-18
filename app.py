@@ -42,7 +42,18 @@ class HelpDeskRequestAPI(BaseModel):
     """API model for help desk requests."""
     request: str = Field(..., description="The user's help desk request text", min_length=1)
     user_id: Optional[str] = Field(None, description="Optional user identifier")
-    model: Optional[str] = Field("claude", description="LLM provider to use: 'claude', 'gpt4o-mini', or 'gemini'", pattern="^(claude|gpt4o-mini|gemini)$")
+    model: Optional[str] = Field("claude", description="LLM provider to use")
+    lite_mode: Optional[bool] = Field(False, description="Use lite workflow for faster responses (skips classification and escalation)")
+    skip_knowledge: Optional[bool] = Field(False, description="Skip knowledge retrieval for maximum speed (only with lite_mode=True)")
+
+
+class CompareRequestAPI(BaseModel):
+    """API model for comparison requests."""
+    request: str = Field(..., description="The user's help desk request text", min_length=1)
+    user_id: Optional[str] = Field(None, description="Optional user identifier")
+    models: Optional[List[str]] = Field(None, description="List of models to compare (defaults to claude, gpt4o-mini, gemini)")
+    lite_mode: Optional[bool] = Field(False, description="Use lite workflow for faster comparison")
+    skip_knowledge: Optional[bool] = Field(False, description="Skip knowledge retrieval (only with lite_mode=True)")
 
 
 class BatchRequestAPI(BaseModel):
@@ -167,16 +178,33 @@ def process_request(
         # Map model string to LLMProvider enum
         model_map = {
             "claude": LLMProvider.CLAUDE,
-            "gpt4o-mini": LLMProvider.GPT4O_MINI, 
-            "gemini": LLMProvider.GEMINI
+            "claude-sonnet-45": LLMProvider.CLAUDE_SONNET_45,
+            "gpt4o-mini": LLMProvider.GPT4O_MINI,
+            "gpt-52": LLMProvider.GPT_52,
+            "gemini": LLMProvider.GEMINI,
+            "gemini-3-pro": LLMProvider.GEMINI_3_PRO,
+            "grok-4-fast": LLMProvider.GROK_4_FAST,
+            "deepseek-v32": LLMProvider.DEEPSEEK_V32,
+            "qwen3-235b": LLMProvider.QWEN3_235B,
+            "llama-31-8b": LLMProvider.LLAMA_31_8B
         }
         provider = model_map.get(request.model.lower() if request.model else "claude", LLMProvider.CLAUDE)
         
-        response =  system.process_request_sync(
-            request_text=request.request,
-            user_id=request.user_id,
-            provider=provider
-        )
+        # Use lite workflow if requested
+        if request.lite_mode:
+            logger.info(f"Processing request in LITE MODE (skip_knowledge={request.skip_knowledge})")
+            response = system.process_request_lite(
+                request_text=request.request,
+                user_id=request.user_id,
+                provider=provider,
+                skip_knowledge=request.skip_knowledge
+            )
+        else:
+            response = system.process_request_sync(
+                request_text=request.request,
+                user_id=request.user_id,
+                provider=provider
+            )
         print(f"Category: {response.category.value}")
         print(f"Confidence: {response.confidence:.2f}")
         print(f"Response: {response.response[:200]}...")
@@ -191,19 +219,47 @@ def process_request(
 
 @app.post("/process/compare", response_model=ComparisonResponse, tags=["Help Desk"])
 async def compare_providers(
-    request: HelpDeskRequestAPI,
+    request: CompareRequestAPI,
     system: HelpDeskSystem = Depends(get_system)
 ):
     """
-    Compare Claude 3.5 Sonnet, GPT-4o Mini, and Gemini 2.0 Flash for the same request.
+    Compare multiple LLM providers for the same request.
     
-    Returns performance metrics, costs, and full responses from all three models,
+    You can specify which models to compare in the 'models' field.
+    Defaults to comparing Claude 3.5 Sonnet, GPT-4o Mini, and Gemini 2.0 Flash.
+    
+    Returns performance metrics, costs, and full responses from all selected models,
     along with a determination of which model performed best based on confidence and cost.
     """
     try:
+        # Import LLMProvider enum
+        from src.models.schemas import LLMProvider
+        
+        # Map model strings to LLMProvider enum
+        model_map = {
+            "claude": LLMProvider.CLAUDE,
+            "claude-sonnet-45": LLMProvider.CLAUDE_SONNET_45,
+            "gpt4o-mini": LLMProvider.GPT4O_MINI,
+            "gpt-52": LLMProvider.GPT_52,
+            "gemini": LLMProvider.GEMINI,
+            "gemini-3-pro": LLMProvider.GEMINI_3_PRO,
+            "grok-4-fast": LLMProvider.GROK_4_FAST,
+            "deepseek-v32": LLMProvider.DEEPSEEK_V32,
+            "qwen3-235b": LLMProvider.QWEN3_235B,
+            "llama-31-8b": LLMProvider.LLAMA_31_8B
+        }
+        
+        # Convert model strings to providers
+        providers = None
+        if request.models:
+            providers = [model_map.get(m.lower(), LLMProvider.CLAUDE) for m in request.models]
+        
         response = await system.compare_providers(
             request_text=request.request,
-            user_id=request.user_id
+            user_id=request.user_id,
+            providers=providers,
+            lite_mode=request.lite_mode,
+            skip_knowledge=request.skip_knowledge
         )
         return response
     except Exception as e:
@@ -234,8 +290,15 @@ def process_batch_requests(
         # Map model strings to LLMProvider enum
         model_map = {
             "claude": LLMProvider.CLAUDE,
+            "claude-sonnet-45": LLMProvider.CLAUDE_SONNET_45,
             "gpt4o-mini": LLMProvider.GPT4O_MINI,
-            "gemini": LLMProvider.GEMINI
+            "gpt-52": LLMProvider.GPT_52,
+            "gemini": LLMProvider.GEMINI,
+            "gemini-3-pro": LLMProvider.GEMINI_3_PRO,
+            "grok-4-fast": LLMProvider.GROK_4_FAST,
+            "deepseek-v32": LLMProvider.DEEPSEEK_V32,
+            "qwen3-235b": LLMProvider.QWEN3_235B,
+            "llama-31-8b": LLMProvider.LLAMA_31_8B
         }
         
         # Convert API models to dictionaries

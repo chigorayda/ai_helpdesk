@@ -118,16 +118,30 @@ class VectorStoreConfig(BaseModel):
 class LLMProvider(str, Enum):
     """Available LLM providers via OpenRouter."""
     CLAUDE = "claude"  # Claude 3.5 Sonnet
+    CLAUDE_SONNET_45 = "claude-sonnet-45"  # Claude Sonnet 4.5
     GPT4O_MINI = "gpt4o-mini"  # GPT-4o Mini
+    GPT_52 = "gpt-52"  # GPT-5.2
     GEMINI = "gemini"  # Gemini 2.0 Flash
+    GEMINI_3_PRO = "gemini-3-pro"  # Gemini 3 Pro Preview
+    GROK_4_FAST = "grok-4-fast"  # Grok 4 Fast
+    DEEPSEEK_V32 = "deepseek-v32"  # DeepSeek V3.2
+    QWEN3_235B = "qwen3-235b"  # Qwen3 235B A22B Instruct 2507
+    LLAMA_31_8B = "llama-31-8b"  # Llama 3.1 8B Instruct
 
 
 class LLMConfig(BaseModel):
     """Configuration for LLM service."""
     provider: LLMProvider = LLMProvider.CLAUDE
     claude_model: str = "anthropic/claude-3.5-sonnet"
+    claude_sonnet_45_model: str = "anthropic/claude-sonnet-4.5"
     gpt4o_mini_model: str = "openai/gpt-4o-mini"
+    gpt_52_model: str = "openai/gpt-5.2"
     gemini_model: str = "google/gemini-2.0-flash-exp:free"
+    gemini_3_pro_model: str = "google/gemini-3-pro-preview"
+    grok_4_fast_model: str = "x-ai/grok-4-fast"
+    deepseek_v32_model: str = "deepseek/deepseek-chat-v3.2"
+    qwen3_235b_model: str = "qwen/qwen3-235b-a22b-instruct-2507"
+    llama_31_8b_model: str = "meta-llama/llama-3.1-8b-instruct"
     temperature: float = 0.1
     max_tokens: int = 2000
     timeout: int = 30
@@ -154,10 +168,7 @@ class ComparisonResponse(BaseModel):
     """Response comparing different LLM providers."""
     request_id: str
     original_request: str
-    claude_metrics: ComparisonMetrics
-    gpt4o_mini_metrics: ComparisonMetrics
-    gemini_metrics: ComparisonMetrics
-    claude_response: HelpDeskResponse
-    gpt4o_mini_response: HelpDeskResponse
-    gemini_response: HelpDeskResponse
+    providers: List[LLMProvider]  # List of providers compared
+    metrics: Dict[str, ComparisonMetrics]  # provider_name -> metrics
+    responses: Dict[str, HelpDeskResponse]  # provider_name -> response
     winner: LLMProvider
