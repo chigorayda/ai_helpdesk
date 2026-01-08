@@ -13,6 +13,7 @@ from src.models.schemas import (
 )
 from src.services.vector_store import vector_store_service
 from src.services.llm_service import llm_service
+from src.utils.telemetry_processor import format_telemetry
 
 logger = logging.getLogger(__name__)
 
@@ -106,12 +107,20 @@ class KnowledgeAgent:
         """Generate multiple search queries for comprehensive retrieval."""
         queries = []
         
-        # Original request as primary query
-        queries.append(request.request)
+        # Format telemetry if available and relevant to category
+        telemetry_context = format_telemetry(request.telemetry, classification.category)
         
-        # Category-specific query
+        # Original request as primary query (with telemetry if relevant)
+        base_query = request.request
+        if telemetry_context:
+            base_query = f"{request.request} {telemetry_context}"
+        queries.append(base_query)
+        
+        # Category-specific query (also with telemetry)
         if classification.category != RequestCategory.UNKNOWN:
             category_query = f"{classification.category.value.replace('_', ' ')} {request.request}"
+            if telemetry_context:
+                category_query = f"{category_query} {telemetry_context}"
             queries.append(category_query)
         
         # Keyword-based queries

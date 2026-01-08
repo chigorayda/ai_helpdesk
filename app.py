@@ -43,6 +43,7 @@ class HelpDeskRequestAPI(BaseModel):
     request: str = Field(..., description="The user's help desk request text", min_length=1)
     user_id: Optional[str] = Field(None, description="Optional user identifier")
     model: Optional[str] = Field("claude", description="LLM provider to use")
+    telemetry: Optional[Dict[str, Any]] = Field(None, description="Optional device telemetry data")
     lite_mode: Optional[bool] = Field(False, description="Use lite workflow for faster responses (skips classification and escalation)")
     skip_knowledge: Optional[bool] = Field(False, description="Skip knowledge retrieval for maximum speed (only with lite_mode=True)")
 
@@ -52,6 +53,7 @@ class CompareRequestAPI(BaseModel):
     request: str = Field(..., description="The user's help desk request text", min_length=1)
     user_id: Optional[str] = Field(None, description="Optional user identifier")
     models: Optional[List[str]] = Field(None, description="List of models to compare (defaults to claude, gpt4o-mini, gemini)")
+    telemetry: Optional[Dict[str, Any]] = Field(None, description="Optional device telemetry data")
     lite_mode: Optional[bool] = Field(False, description="Use lite workflow for faster comparison")
     skip_knowledge: Optional[bool] = Field(False, description="Skip knowledge retrieval (only with lite_mode=True)")
 
@@ -194,16 +196,18 @@ def process_request(
         if request.lite_mode:
             logger.info(f"Processing request in LITE MODE (skip_knowledge={request.skip_knowledge})")
             response = system.process_request_lite(
-                request_text=request.request,
-                user_id=request.user_id,
-                provider=provider,
-                skip_knowledge=request.skip_knowledge
+            request_text=request.request,
+            user_id=request.user_id,
+            provider=provider,
+            skip_knowledge=request.skip_knowledge,
+            telemetry=request.telemetry
             )
         else:
             response = system.process_request_sync(
                 request_text=request.request,
                 user_id=request.user_id,
-                provider=provider
+                provider=provider,
+                telemetry=request.telemetry
             )
         print(f"Category: {response.category.value}")
         print(f"Confidence: {response.confidence:.2f}")
@@ -259,7 +263,8 @@ async def compare_providers(
             user_id=request.user_id,
             providers=providers,
             lite_mode=request.lite_mode,
-            skip_knowledge=request.skip_knowledge
+            skip_knowledge=request.skip_knowledge,
+            telemetry=request.telemetry
         )
         return response
     except Exception as e:

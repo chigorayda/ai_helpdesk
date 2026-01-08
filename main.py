@@ -17,6 +17,7 @@ from src.services.document_processor import document_processor
 from src.services.vector_store import vector_store_service
 
 from src.services.cost_service import cost_service
+from src.services.quality_evaluator import quality_evaluator
 from src.models.schemas import ComparisonResponse, ComparisonMetrics, LLMProvider
 
 # Configure logging
@@ -184,7 +185,7 @@ class HelpDeskSystem:
             logger.error(f"Error processing request: {str(e)}")
             raise
     
-    def process_request_sync(self, request_text: str, user_id: str = None, provider: Optional[LLMProvider] = None) -> HelpDeskResponse:
+    def process_request_sync(self, request_text: str, user_id: str = None, provider: Optional[LLMProvider] = None, telemetry: Optional[dict] = None) -> HelpDeskResponse:
         """
         Synchronous version of process_request.
         
@@ -192,6 +193,7 @@ class HelpDeskSystem:
             request_text: The user's request text
             user_id: Optional user identifier
             provider: Optional LLM provider to use (Gemini or OpenAI)
+            telemetry: Optional device telemetry data
             
         Returns:
             HelpDeskResponse with the result
@@ -206,11 +208,16 @@ class HelpDeskSystem:
                 settings.system_config.llm.provider = provider
                 logger.info(f"Using {provider.value} provider for this request")
             
+            # Parse telemetry if provided
+            from src.models.schemas import DeviceTelemetry
+            telemetry_obj = DeviceTelemetry(**telemetry) if telemetry else None
+            
             # Create request object
             request = HelpDeskRequest(
                 id=str(uuid.uuid4()),
                 user_id=user_id,
                 request=request_text,
+                telemetry=telemetry_obj,
                 timestamp=datetime.now()
             )
             
@@ -238,7 +245,8 @@ class HelpDeskSystem:
         request_text: str, 
         user_id: str = None, 
         provider: Optional[LLMProvider] = None,
-        skip_knowledge: bool = False
+        skip_knowledge: bool = False,
+        telemetry: Optional[dict] = None
     ) -> HelpDeskResponse:
         """
         Process request using lite workflow (faster, skips classification and escalation).
@@ -248,6 +256,7 @@ class HelpDeskSystem:
             user_id: Optional user identifier
             provider: Optional LLM provider to use
             skip_knowledge: If True, skip knowledge retrieval for maximum speed
+            telemetry: Optional device telemetry data
             
         Returns:
             HelpDeskResponse with the result
@@ -262,11 +271,16 @@ class HelpDeskSystem:
                 settings.system_config.llm.provider = provider
                 logger.info(f"[LITE MODE] Using {provider.value} provider")
             
+            # Parse telemetry if provided
+            from src.models.schemas import DeviceTelemetry
+            telemetry_obj = DeviceTelemetry(**telemetry) if telemetry else None
+            
             # Create request object
             request = HelpDeskRequest(
                 id=str(uuid.uuid4()),
                 user_id=user_id,
                 request=request_text,
+                telemetry=telemetry_obj,
                 timestamp=datetime.now()
             )
             
@@ -380,7 +394,8 @@ class HelpDeskSystem:
         user_id: str = None,
         providers: Optional[List[LLMProvider]] = None,
         lite_mode: bool = False,
-        skip_knowledge: bool = False
+        skip_knowledge: bool = False,
+        telemetry: Optional[dict] = None
     ) -> ComparisonResponse:
         """
         Compare multiple LLM providers processing for the same request.
@@ -391,6 +406,7 @@ class HelpDeskSystem:
             providers: Optional list of providers to compare (defaults to Claude, GPT-4o Mini, Gemini)
             lite_mode: If True, use lite workflow for all providers (faster)
             skip_knowledge: If True and lite_mode=True, skip knowledge retrieval
+            telemetry: Optional device telemetry data
             
         Returns:
             ComparisonResponse with metrics and responses from selected providers
@@ -419,6 +435,10 @@ class HelpDeskSystem:
             settings.system_config.llm.provider = provider
             provider_start = datetime.now()
             
+            # Parse telemetry if provided
+            from src.models.schemas import DeviceTelemetry
+            telemetry_obj = DeviceTelemetry(**telemetry) if telemetry else None
+            
             # Use appropriate workflow based on mode
             if lite_mode:
                 # Create request for lite mode
@@ -426,6 +446,7 @@ class HelpDeskSystem:
                     id=str(uuid.uuid4()),
                     user_id=user_id,
                     request=request_text,
+                    telemetry=telemetry_obj,
                     timestamp=datetime.now()
                 )
                 provider_response = self.workflow_lite.process_request_sync(
@@ -448,13 +469,23 @@ class HelpDeskSystem:
                 provider_response.escalation.should_escalate
             )
             
+            # Evaluate response quality using LLM-as-judge
+            logger.info(f"Evaluating response quality for {provider.value}...")
+            response_quality = quality_evaluator.evaluate_response_quality(
+                original_request=request_text,
+                response_text=provider_response.response,
+                has_knowledge_sources=len(provider_response.knowledge_sources) > 0,
+                knowledge_sources_count=len(provider_response.knowledge_sources)
+            )
+            logger.info(f"{provider.value} - Quality score: {response_quality:.2f}")
+            
             # Create metrics
             metrics = ComparisonMetrics(
                 provider=provider,
                 processing_time=provider_duration,
                 estimated_cost=cost,
                 hallucination_score=hallucination_score,
-                response_quality=provider_response.confidence
+                response_quality=response_quality  # Now uses actual quality evaluation
             )
             
             # Store results

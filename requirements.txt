@@ -118,6 +118,7 @@ posthog==7.0.1
 propcache==0.4.1
 proto-plus==1.26.1
 protobuf==4.25.8
+psutil==6.1.1
 pulsar-client==3.8.0
 pyarrow==22.0.0
 pyasn1==0.6.1

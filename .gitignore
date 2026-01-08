@@ -87,6 +87,7 @@ ipython_config.py
 # pyenv
 .python-version
 .env
+.qodo
 penv
 Dockerfile-Old-GPU
 Dockerfile-reduced-size-one
@@ -103,3 +104,7 @@ WARP.md
 
 *.example
 /venv2
+# data/
+__pypackages__/
+# mypy
+

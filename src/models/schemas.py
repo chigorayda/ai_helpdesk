@@ -27,11 +27,28 @@ class PriorityLevel(str, Enum):
     CRITICAL = "critical"
 
 
+class DeviceTelemetry(BaseModel):
+    """Compact device telemetry data for diagnostic purposes."""
+    device_id: str = Field(..., description="Device identifier")
+    os: str = Field(..., description="Operating system (e.g., win11, macos13, ubuntu22)")
+    online: bool = Field(..., description="Device online status")
+    vpn_connected: bool = Field(..., description="VPN connection status")
+    disk_critical: bool = Field(..., description="Disk usage critical (>90%)")
+    cpu_pct: Optional[int] = Field(None, ge=0, le=100, description="CPU usage percentage")
+    mem_pct: Optional[int] = Field(None, ge=0, le=100, description="Memory usage percentage")
+    uptime_hours: Optional[int] = Field(None, description="System uptime in hours")
+    recent_errors: Optional[List[str]] = Field(None, max_length=3, description="Recent error codes/messages")
+    failed_services: Optional[List[str]] = Field(None, max_length=3, description="Failed services")
+    ip_assigned: Optional[bool] = Field(None, description="IP address assigned")
+    dns_resolved: Optional[bool] = Field(None, description="DNS resolution working")
+
+
 class HelpDeskRequest(BaseModel):
     """Model for incoming help desk requests."""
     id: str = Field(..., description="Unique request identifier")
     user_id: Optional[str] = Field(None, description="User identifier")
     request: str = Field(..., description="User's request text")
+    telemetry: Optional[DeviceTelemetry] = Field(None, description="Optional device telemetry data")
     timestamp: datetime = Field(default_factory=datetime.now)
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
 

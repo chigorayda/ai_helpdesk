@@ -13,6 +13,7 @@ from src.models.schemas import (
 )
 from src.services.llm_service import llm_service
 from config.settings import settings
+from src.utils.telemetry_processor import format_telemetry
 
 logger = logging.getLogger(__name__)
 
@@ -120,12 +121,16 @@ class ResponseAgent:
         # Prepare context from retrieved documents
         context = self._prepare_knowledge_context(retrieval_result)
         
+        # Include telemetry context if available
+        telemetry_context = format_telemetry(request.telemetry, classification.category)
+        telemetry_info = f"\nDevice Status: {telemetry_context}" if telemetry_context else ""
+        
         prompt = f"""
 You are a helpful IT support specialist providing direct assistance to users.
 
 User Request: "{request.request}"
 Category: {classification.category.value.replace('_', ' ').title()}
-Confidence: {classification.confidence:.2f}
+Confidence: {classification.confidence:.2f}{telemetry_info}
 
 Relevant Knowledge Base Information:
 {context}
@@ -162,11 +167,15 @@ Generate a helpful response:
         
         context = self._prepare_knowledge_context(retrieval_result)
         
+        # Include telemetry context if available
+        telemetry_context = format_telemetry(request.telemetry, classification.category)
+        telemetry_info = f"\nDevice Status: {telemetry_context}" if telemetry_context else ""
+        
         prompt = f"""
 You are an IT support specialist helping a user with a technical issue.
 
 User Request: "{request.request}"
-Category: {classification.category.value.replace('_', ' ').title()}
+Category: {classification.category.value.replace('_', ' ').title()}{telemetry_info}
 
 Available Information:
 {context}

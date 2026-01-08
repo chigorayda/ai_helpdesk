@@ -6,6 +6,9 @@ import asyncio
 from datetime import datetime
 import sys
 import os
+import platform
+import psutil
+import json
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -13,47 +16,159 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from main import HelpDeskSystem
 from src.models.schemas import LLMProvider
 
-# Sample IT questions for sidebar
+# Helper functions for telemetry
+def collect_device_telemetry():
+    """Auto-detect system telemetry."""
+    try:
+        os_name = platform.system().lower()
+        if os_name == "darwin":
+            os_simple = "macos13"
+        elif os_name == "windows":
+            os_simple = "win11"
+        else:
+            os_simple = "ubuntu22"
+        
+        return {
+            "device_id": f"streamlit-{platform.node()}",
+            "os": os_simple,
+            "online": True,
+            "vpn_connected": False,
+            "disk_critical": psutil.disk_usage('/').percent > 90,
+            "cpu_pct": int(psutil.cpu_percent(interval=0.1)),
+            "mem_pct": int(psutil.virtual_memory().percent),
+            "uptime_hours": int((datetime.now().timestamp() - psutil.boot_time()) / 3600)
+        }
+    except Exception as e:
+        return None
+
+def normalize_os_value(os_value):
+    """Normalize OS value to standard format (windows, macos, linux)"""
+    if not os_value:
+        return 'windows'
+    os_lower = str(os_value).lower()
+    if 'win' in os_lower:
+        return 'windows'
+    elif 'mac' in os_lower or 'darwin' in os_lower:
+        return 'macos'
+    elif 'linux' in os_lower or 'ubuntu' in os_lower:
+        return 'linux'
+    return 'windows'
+
+# Sample IT questions with telemetry data
 SAMPLE_QUESTIONS = [
     {
         "question": "I've been locked out of my account. I tried logging in several times but keep getting 'invalid password' errors.",
-        "type": "Password Reset"
+        "type": "Password Reset",
+        "telemetry": {
+            "device_id": "LAPTOP-USER001",
+            "os": "win11",
+            "online": True,
+            "vpn_connected": False,
+            "disk_critical": False,
+            "cpu_pct": 25,
+            "mem_pct": 45
+        }
     },
     {
         "question": "The printer on the 3rd floor isn't working. My print job just disappeared from the queue.",
-        "type": "Printer Issues"
+        "type": "Printer Issues",
+        "telemetry": None
     },
     {
         "question": "My laptop has been running extremely slow. It takes 10 minutes to boot up and applications freeze.",
-        "type": "Performance Issues"
+        "type": "Performance Issues",
+        "telemetry": {
+            "device_id": "LAPTOP-USER003",
+            "os": "win11",
+            "online": True,
+            "vpn_connected": True,
+            "disk_critical": True,
+            "cpu_pct": 89,
+            "mem_pct": 95,
+            "uptime_hours": 336,
+            "recent_errors": ["DISK_FULL_WARNING", "MEMORY_PRESSURE", "PAGE_FAULT_ERRORS"]
+        }
     },
     {
         "question": "I can't connect to the office WiFi. It says 'Can't connect to this network.'",
-        "type": "Network Issues"
+        "type": "Network Issues",
+        "telemetry": {
+            "device_id": "LAPTOP-USER004",
+            "os": "macos13",
+            "online": False,
+            "vpn_connected": False,
+            "disk_critical": False,
+            "cpu_pct": 30,
+            "mem_pct": 60,
+            "ip_assigned": False,
+            "dns_resolved": False
+        }
     },
     {
         "question": "I need Adobe Acrobat Pro installed. The installation keeps failing with error 1603.",
-        "type": "Software Installation"
+        "type": "Software Installation",
+        "telemetry": {
+            "device_id": "DESKTOP-USER005",
+            "os": "win11",
+            "online": True,
+            "vpn_connected": True,
+            "disk_critical": True,
+            "cpu_pct": 15,
+            "mem_pct": 40,
+            "failed_services": ["WindowsInstaller", "MsiServer"]
+        }
     },
     {
         "question": "I'm not receiving any emails since yesterday. Sending works fine but inbox hasn't updated.",
-        "type": "Email Problems"
+        "type": "Email Problems",
+        "telemetry": {
+            "device_id": "LAPTOP-USER006",
+            "os": "win11",
+            "online": True,
+            "vpn_connected": False,
+            "disk_critical": False,
+            "cpu_pct": 35,
+            "mem_pct": 55
+        }
     },
     {
         "question": "I saved a PowerPoint yesterday but can't find it. Can you recover it from backup?",
-        "type": "Lost Files"
+        "type": "Lost Files",
+        "telemetry": None
     },
     {
         "question": "My account is locked due to too many failed login attempts. Can you unlock it?",
-        "type": "Account Lockout"
+        "type": "Account Lockout",
+        "telemetry": None
     },
     {
         "question": "Microsoft Teams keeps crashing when I try to join video calls.",
-        "type": "Application Crashes"
+        "type": "Application Crashes",
+        "telemetry": {
+            "device_id": "LAPTOP-USER009",
+            "os": "macos13",
+            "online": True,
+            "vpn_connected": True,
+            "disk_critical": False,
+            "cpu_pct": 85,
+            "mem_pct": 88,
+            "uptime_hours": 720,
+            "recent_errors": ["TEAMS_GPU_ERROR", "MEMORY_LEAK_DETECTED"]
+        }
     },
     {
         "question": "My external monitor shows 'No Signal'. All cables are plugged in securely.",
-        "type": "Hardware Issues"
+        "type": "Hardware Issues",
+        "telemetry": {
+            "device_id": "LAPTOP-USER010",
+            "os": "ubuntu22",
+            "online": True,
+            "vpn_connected": False,
+            "disk_critical": False,
+            "cpu_pct": 20,
+            "mem_pct": 50,
+            "recent_errors": ["DISPLAY_DRIVER_ERROR", "USB_DISCONNECT"]
+        }
     }
 ]
 
@@ -136,13 +251,17 @@ if system is None:
     st.error("❌ Failed to initialize the Help Desk System. Please check your configuration.")
     st.stop()
 
-# Initialize session state for question selection
+# Initialize session state for question selection and telemetry
 if 'current_question_tab1' not in st.session_state:
     st.session_state.current_question_tab1 = ''
 if 'current_question_tab2' not in st.session_state:
     st.session_state.current_question_tab2 = ''
 if 'active_tab' not in st.session_state:
     st.session_state.active_tab = 0
+if 'telemetry_tab1' not in st.session_state:
+    st.session_state.telemetry_tab1 = None
+if 'telemetry_tab2' not in st.session_state:
+    st.session_state.telemetry_tab2 = None
 
 # Sidebar
 with st.sidebar:
@@ -159,11 +278,13 @@ with st.sidebar:
             with col1:
                 if st.button(f"Use in Ask", key=f"sample_tab1_{idx}"):
                     st.session_state.current_question_tab1 = sample['question']
+                    st.session_state.telemetry_tab1 = sample.get('telemetry')
                     st.session_state.active_tab = 0
                     st.rerun()
             with col2:
                 if st.button(f"Use in Compare", key=f"sample_tab2_{idx}"):
                     st.session_state.current_question_tab2 = sample['question']
+                    st.session_state.telemetry_tab2 = sample.get('telemetry')
                     st.session_state.active_tab = 1
                     st.rerun()
     
@@ -246,6 +367,42 @@ if st.session_state.active_tab == 0:
         else:
             skip_knowledge = False
     
+    # Telemetry section
+    with st.expander("🔧 Device Telemetry (Optional)", expanded=False):
+        st.markdown("*Raw telemetry data to help diagnose issues*")
+        
+        telemetry_text = st.text_area(
+            "Telemetry JSON",
+            value=json.dumps(st.session_state.telemetry_tab1, indent=2) if st.session_state.telemetry_tab1 else "",
+            height=200,
+            placeholder='{\n  "device_id": "LAPTOP-001",\n  "os": "win11",\n  "cpu_pct": 85,\n  "mem_pct": 90\n}',
+            key="telemetry_text_tab1"
+        )
+        
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            if st.button("🔄 Auto-detect", key="auto_detect_tab1"):
+                detected = collect_device_telemetry()
+                if detected:
+                    st.session_state.telemetry_tab1 = detected
+                    st.rerun()
+        
+        with col2:
+            if st.button("🗑️ Clear", key="clear_tab1"):
+                st.session_state.telemetry_tab1 = None
+                st.rerun()
+        
+        # Parse telemetry JSON
+        if telemetry_text.strip():
+            try:
+                st.session_state.telemetry_tab1 = json.loads(telemetry_text)
+                st.success("✅ Telemetry data loaded")
+            except json.JSONDecodeError as e:
+                st.error(f"❌ Invalid JSON: {e}")
+                st.session_state.telemetry_tab1 = None
+        else:
+            st.session_state.telemetry_tab1 = None
+    
     if st.button("🚀 Submit Question", type="primary", use_container_width=True):
         if not question:
             st.error("Please enter a question!")
@@ -274,13 +431,15 @@ if st.session_state.active_tab == 0:
                             request_text=question,
                             user_id=user_id if user_id else None,
                             provider=provider,
-                            skip_knowledge=skip_knowledge
+                            skip_knowledge=skip_knowledge,
+                            telemetry=st.session_state.telemetry_tab1
                         )
                     else:
                         response = system.process_request_sync(
                             request_text=question,
                             user_id=user_id if user_id else None,
-                            provider=provider
+                            provider=provider,
+                            telemetry=st.session_state.telemetry_tab1
                         )
                     
                     # Display response
@@ -383,6 +542,42 @@ if st.session_state.active_tab == 1:
     
     compare_user_id = st.text_input("User ID (optional)", placeholder="user_001", key="compare_user")
     
+    # Telemetry section for Compare tab
+    with st.expander("🔧 Device Telemetry (Optional)", expanded=False):
+        st.markdown("*Raw telemetry data to help diagnose issues*")
+        
+        telemetry_text_compare = st.text_area(
+            "Telemetry JSON",
+            value=json.dumps(st.session_state.telemetry_tab2, indent=2) if st.session_state.telemetry_tab2 else "",
+            height=200,
+            placeholder='{\n  "device_id": "LAPTOP-001",\n  "os": "win11",\n  "cpu_pct": 85,\n  "mem_pct": 90\n}',
+            key="telemetry_text_tab2"
+        )
+        
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            if st.button("🔄 Auto-detect", key="auto_detect_tab2"):
+                detected = collect_device_telemetry()
+                if detected:
+                    st.session_state.telemetry_tab2 = detected
+                    st.rerun()
+        
+        with col2:
+            if st.button("🗑️ Clear", key="clear_tab2"):
+                st.session_state.telemetry_tab2 = None
+                st.rerun()
+        
+        # Parse telemetry JSON
+        if telemetry_text_compare.strip():
+            try:
+                st.session_state.telemetry_tab2 = json.loads(telemetry_text_compare)
+                st.success("✅ Telemetry data loaded")
+            except json.JSONDecodeError as e:
+                st.error(f"❌ Invalid JSON: {e}")
+                st.session_state.telemetry_tab2 = None
+        else:
+            st.session_state.telemetry_tab2 = None
+    
     if st.button("🔬 Compare Models", type="primary", use_container_width=True):
         if not compare_question:
             st.error("Please enter a question!")
@@ -418,7 +613,8 @@ if st.session_state.active_tab == 1:
                             user_id=compare_user_id if compare_user_id else None,
                             providers=providers,
                             lite_mode=comparison_lite_mode,
-                            skip_knowledge=comparison_skip_knowledge
+                            skip_knowledge=comparison_skip_knowledge,
+                            telemetry=st.session_state.telemetry_tab2
                         )
                     )
                     
